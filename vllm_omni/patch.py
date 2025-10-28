@@ -4,11 +4,15 @@ from vllm.inputs.data import TokensPrompt as _OriginalTokensPrompt
 from vllm.model_executor.layers.rotary_embedding import (
     MRotaryEmbedding as _OriginalMRotaryEmbedding,
 )
+from vllm.model_executor.layers.fused_moe import (
+    FusedMoE as _OriginalFusedMoE,
+)
 from vllm.v1.engine import EngineCoreRequest as _OriginalEngineCoreRequest
 from vllm.v1.request import Request as _OriginalRequest
 from vllm_omni.engine import OmniEngineCoreRequest
 from vllm_omni.inputs.data import OmniTokensPrompt
 from vllm_omni.model_executor.layers.mrope import MRotaryEmbedding
+from vllm_omni.model_executor.layers.fused_moe.layer import FusedMoE
 from vllm_omni.request import OmniRequest
 
 for module_name, module in sys.modules.items():
@@ -26,3 +30,8 @@ for module_name, module in sys.modules.items():
         and module.EngineCoreRequest == _OriginalEngineCoreRequest
     ):
         module.EngineCoreRequest = OmniEngineCoreRequest
+    if (
+        hasattr(module, "FusedMoE")
+        and module.FusedMoE == _OriginalFusedMoE
+    ):
+        module.FusedMoE = FusedMoE

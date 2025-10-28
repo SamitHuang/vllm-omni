@@ -1,0 +1,338 @@
+import tempfile
+from typing import Dict, List, Optional, Union
+from urllib.request import urlopen
+
+import librosa
+import requests
+import resampy
+import soundfile as sf
+import torch
+import torchvision.io
+from processing_omni import fetch_image, fetch_video
+from vllm.inputs import TextPrompt
+
+from vllm_omni.inputs.data import OmniTokensPrompt
+
+
+def get_system_prompt():
+    """Get the system prompt for Qwen3 Omni MoE."""
+    return {
+        "role": "system",
+        "content": [
+            {
+                "type": "text",
+                "text": (
+                    "You are Qwen, a virtual human developed by the Qwen Team, "
+                    "Alibaba Group, capable of perceiving auditory and visual inputs, "
+                    "as well as generating text and speech."
+                ),
+            }
+        ],
+    }
+
+
+def resample_wav_to_16khz(input_filepath):
+    """Resample audio to 16kHz (Qwen3 Omni MoE uses 16kHz)."""
+    data, original_sample_rate = sf.read(input_filepath)
+    # Only use the first channel
+    if len(data.shape) > 1:
+        data = data[:, 0]
+    # Resample to 16kHz
+    data_resampled = resampy.resample(data, sr_orig=original_sample_rate, sr_new=16000)
+    return data_resampled
+
+
+def fetch_and_read_video(args, video_url: str, fps=2):
+    """Fetch and read video file."""
+
+    def read_video_with_torchvision(video_file_name: str):
+        video, audio, info = torchvision.io.read_video(
+            video_file_name,
+            start_pts=0.0,
+            end_pts=None,
+            pts_unit="sec",
+            output_format="TCHW",
+        )
+
+        total_frames, video_fps = video.size(0), info["video_fps"]
+        total_duration = round(total_frames / video_fps, 3)
+        nframes = int(total_frames / video_fps * fps)
+
+        frame_timestamps = total_duration * torch.arange(1, nframes + 1) / nframes
+        grid_timestamps = frame_timestamps[::2]
+        second_per_grid = grid_timestamps[1] - grid_timestamps[0]
+
+        idx = torch.linspace(0, video.size(0) - 1, nframes).round().long()
+        video = video[idx]
+
+        return video
+
+    def read_video_with_transformers(video_file_name: Union[str, List[str]]):
+        video, total_duration, nframes, second_per_grid = fetch_video(
+            {"video": video_file_name}
+        )
+        if total_duration is None and nframes is None:
+            nframes = len(video)
+            total_duration = 0.5 * nframes
+            second_per_grid = 1.0
+        return video
+
+    def read_video(video_file_name: str):
+        if args.use_torchvision:
+            return read_video_with_torchvision(video_file_name)
+        else:
+            return read_video_with_transformers(video_file_name)
+
+    if isinstance(video_url, str) and video_url.startswith("http"):
+        with tempfile.NamedTemporaryFile(delete=True) as temp_video_file:
+            resp = requests.get(video_url)
+            assert resp.status_code == requests.codes.ok, (
+                f"Failed to fetch video from {video_url}, "
+                f"status_code:{resp.status_code}, resp:{resp}"
+            )
+
+            temp_video_file.write(urlopen(video_url).read())
+            temp_video_file_path = temp_video_file.name
+            video_file_name = temp_video_file_path
+            return read_video(video_file_name)
+    else:
+        video_file_name = video_url
+        return read_video(video_file_name)
+
+
+def make_inputs_qwen3_omni(
+    args,
+    messages: List[Dict[str, Union[str, List[Dict[str, str]]]]],
+    use_audio_in_video: Optional[bool] = False,
+    tokenize: bool = False,
+) -> Union[OmniTokensPrompt, TextPrompt]:
+    """Process inputs for Qwen3 Omni MoE model."""
+
+    from transformers import AutoConfig, AutoProcessor
+
+    processor = AutoProcessor.from_pretrained(args.model)
+
+    audios, images, videos = [], [], []
+    for message in messages:
+        if not isinstance(message["content"], list):
+            message["content"] = [
+                {
+                    "type": "text",
+                    "text": message["content"],
+                }
+            ]
+        index, num_contents = 0, len(message["content"])
+        while index < num_contents:
+            ele = message["content"][index]
+            if "type" not in ele:
+                if "text" in ele:
+                    ele["type"] = "text"
+                elif "audio" in ele:
+                    ele["type"] = "audio"
+                elif "audio_url" in ele:
+                    ele["type"] = "audio_url"
+                elif "image" in ele:
+                    ele["type"] = "image"
+                elif "image_url" in ele:
+                    ele["type"] = "image_url"
+                elif "video" in ele:
+                    ele["type"] = "video"
+                elif "video_url" in ele:
+                    ele["type"] = "video_url"
+                else:
+                    raise ValueError(f"Unknown ele: {ele}")
+
+            if ele["type"] == "audio" or ele["type"] == "audio_url":
+                if "audio_url" in ele:
+                    audio_key = "audio_url"
+                    with tempfile.NamedTemporaryFile(delete=True) as temp_audio_file:
+                        temp_audio_file.write(urlopen(ele[audio_key]).read())
+                        temp_audio_file_path = temp_audio_file.name
+                        audios.append(resample_wav_to_16khz(temp_audio_file_path))
+                        ele["audio"] = temp_audio_file_path
+                elif "audio" in ele:
+                    audio_key = "audio"
+                    audios.append(resample_wav_to_16khz(ele[audio_key]))
+                else:
+                    raise ValueError(f"Unknown ele {ele}")
+            elif use_audio_in_video and (
+                ele["type"] == "video" or ele["type"] == "video_url"
+            ):
+                # Use video as audio as well
+                if "video_url" in ele:
+                    audio_key = "video_url"
+                    with tempfile.NamedTemporaryFile(delete=True) as temp_video_file:
+                        temp_video_file.write(urlopen(ele[audio_key]).read())
+                        temp_video_file_path = temp_video_file.name
+                        ele[audio_key] = temp_video_file_path
+                        audios.append(librosa.load(temp_video_file_path, sr=16000)[0])
+                        videos.append(fetch_and_read_video(args, temp_video_file_path))
+                        ele["video"] = temp_video_file_path
+                elif "video" in ele:
+                    audio_key = "video"
+                    audios.append(librosa.load(ele[audio_key], sr=16000)[0])
+                    videos.append(fetch_and_read_video(args, audio_key))
+                else:
+                    raise ValueError("Unknown ele {}".format(ele))
+                # Insert audio after the video
+                message["content"].insert(
+                    index + 1,
+                    {
+                        "type": "audio",
+                        "audio": ele[audio_key],
+                    },
+                )
+                index += 1
+            elif ele["type"] == "video" or ele["type"] == "video_url":
+                if "video_url" in ele:
+                    video_key = "video_url"
+                    with tempfile.NamedTemporaryFile(delete=True) as temp_video_file:
+                        temp_video_file.write(urlopen(ele["video_url"]).read())
+                        temp_video_file_path = temp_video_file.name
+                        videos.append(fetch_and_read_video(args, temp_video_file))
+                        ele["video"] = temp_video_file_path
+                else:
+                    video_key = "video"
+                    videos.append(fetch_and_read_video(args, ele[video_key]))
+            elif ele["type"] == "image" or ele["type"] == "image_url":
+                images.append(fetch_image(ele))
+
+            # Move to the next content
+            index += 1
+
+    prompt = processor.apply_chat_template(
+        messages,
+        tokenize=tokenize,
+        add_generation_prompt=True,
+        add_vision_id=True,
+    )
+
+    audios = audios if len(audios) > 0 else None
+    images = images if len(images) > 0 else None
+    videos = videos if len(videos) > 0 else None
+
+    multi_modal_data = {}
+    if audios:
+        multi_modal_data["audio"] = audios
+    if images:
+        multi_modal_data["image"] = images
+    if videos:
+        multi_modal_data["video"] = videos
+
+    if isinstance(prompt, list) and isinstance(prompt[0], (list, str)):
+        prompt = prompt[0]
+
+    if tokenize:
+        return OmniTokensPrompt(
+            prompt_token_ids=prompt,
+            multi_modal_data=multi_modal_data,
+        )
+    else:
+        return TextPrompt(
+            prompt=prompt,
+            multi_modal_data=multi_modal_data,
+        )
+
+
+def make_text_prompt(args, prompt):
+    """Create a simple text prompt."""
+    messages = [
+        get_system_prompt(),
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+            ],
+        },
+    ]
+
+    prompt = make_inputs_qwen3_omni(args, messages, tokenize=args.tokenize)
+    return prompt
+
+
+def make_audio_prompt(args, audio_path, prompt_text="What do you hear in this audio?"):
+    """Create a prompt with audio input."""
+    messages = [
+        get_system_prompt(),
+        {
+            "role": "user",
+            "content": [
+                {"type": "audio", "audio": audio_path},
+                {"type": "text", "text": prompt_text},
+            ],
+        },
+    ]
+
+    prompt = make_inputs_qwen3_omni(args, messages, tokenize=args.tokenize)
+    return prompt
+
+
+def make_image_prompt(args, image_path, prompt_text="What do you see in this image?"):
+    """Create a prompt with image input."""
+    messages = [
+        get_system_prompt(),
+        {
+            "role": "user",
+            "content": [
+                {"type": "image", "image": image_path},
+                {"type": "text", "text": prompt_text},
+            ],
+        },
+    ]
+
+    prompt = make_inputs_qwen3_omni(args, messages, tokenize=args.tokenize)
+    return prompt
+
+
+def make_video_prompt(args, video_path, prompt_text="What happens in this video?"):
+    """Create a prompt with video input."""
+    messages = [
+        get_system_prompt(),
+        {
+            "role": "user",
+            "content": [
+                {"type": "video", "video": video_path},
+                {"type": "text", "text": prompt_text},
+            ],
+        },
+    ]
+
+    prompt = make_inputs_qwen3_omni(args, messages, tokenize=args.tokenize)
+    return prompt
+
+
+def make_omni_prompt(
+    args, prompt=None
+) -> Union[OmniTokensPrompt, List[OmniTokensPrompt]]:
+    """Main function to create prompts based on prompt type."""
+    if args.prompt_type == "text":
+        prompt = make_text_prompt(args, prompt)
+    elif args.prompt_type == "audio":
+        # Assume prompt is the audio path
+        prompt = make_audio_prompt(args, prompt)
+    elif args.prompt_type == "image":
+        # Assume prompt is the image path
+        prompt = make_image_prompt(args, prompt)
+    elif args.prompt_type == "video":
+        # Assume prompt is the video path
+        prompt = make_video_prompt(args, prompt)
+    elif args.prompt_type == "audio-in-video":
+        # For video with audio
+        prompt = make_inputs_qwen3_omni(
+            args,
+            [
+                get_system_prompt(),
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "video", "video": prompt},
+                    ],
+                },
+            ],
+            use_audio_in_video=True,
+            tokenize=args.tokenize,
+        )
+    else:
+        raise ValueError(f"Unsupported prompt type: {args.prompt_type}")
+    return prompt
+

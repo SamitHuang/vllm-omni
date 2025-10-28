@@ -466,7 +466,9 @@ class OmniStageLLM(LLM):
             **kwargs,
         )
 
+        
         # Create the Engine (autoselects V0 vs V1)
+        print(f"UsageContext.LLM_CLASS {UsageContext.LLM_CLASS}")
         self.llm_engine = LLMEngine.from_engine_args(
             engine_args=engine_args, usage_context=UsageContext.LLM_CLASS
         )
