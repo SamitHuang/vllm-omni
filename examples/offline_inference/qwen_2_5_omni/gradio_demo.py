@@ -171,7 +171,7 @@ def build_interface(
             inputs=[input_box],
             outputs=[text_output, audio_output],
         )
-        demo.queue(concurrency_count=1)
+        demo.queue()
     return demo
 
 
