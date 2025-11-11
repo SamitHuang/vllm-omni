@@ -47,6 +47,7 @@ dev = [
     "flake8>=6.0.0",
     "mypy>=1.0.0",
     "pre-commit>=3.0.0",
+    "gradio>=5.49.1",
 ]
 
 docs = [
