@@ -30,3 +30,11 @@ Send request via curl
 ```bash
 bash run_curl_multimodal_generation.sh
 ```
+
+## Gradio Demo
+
+```bash
+python gradio_demo.py  --model Qwen/Qwen2.5-Omni-7B --port 7861
+```
+
+Then open `http://localhost:7861/` on the local browser.

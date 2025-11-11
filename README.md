@@ -102,6 +102,3 @@ uv pip install -e .
 
 Please check the folder of [examples](examples)
 
-## Further details
-
-For detailed architecture design, see [vllm_omni_design.md](docs/architecture/vllm_omni_design.md) and [high_level_arch_design.md](docs/architecture/high_level_arch_design.md).
