@@ -423,6 +423,40 @@ class OmniStageLLM(LLM):
                 # to provide better context to the user.
                 raise ValueError(f"Invalid 'kv_transfer_config' provided: {e}") from e
 
+        # Note: speculative_config dict should be left as-is here.
+        # EngineArgs.create_speculative_config() will handle the conversion.
+        # Our patch in vllm_omni.speculative handles the custom method name.
+        if "speculative_config" in kwargs:
+            from omegaconf import DictConfig
+            if isinstance(kwargs["speculative_config"], DictConfig):
+                from omegaconf import OmegaConf
+                kwargs["speculative_config"] = OmegaConf.to_container(kwargs["speculative_config"], resolve=True)
+
+            # if isinstance(
+            #         kwargs["speculative_config"], dict
+            # ):
+            #     from vllm.config import SpeculativeConfig
+            #
+            #     raw_config_dict = kwargs["speculative_config"]
+            #     try:
+            #         print(f"=================raw_config_dict 1{raw_config_dict}")
+            #         # Convert dict to SpeculativeConfig object
+            #         kwargs["speculative_config"] = SpeculativeConfig(**raw_config_dict)
+            #         print(f"=================raw_config_dict 2{kwargs["speculative_config"]}")
+            #         logger.info(
+            #             "Converted 'speculative_config' dict to SpeculativeConfig: %s",
+            #             kwargs["speculative_config"]
+            #         )
+            #     except (ValidationError, TypeError) as e:
+            #         logger.error(
+            #             "Failed to convert 'speculative_config' dict to "
+            #             "SpeculativeConfig object. Dict: %s. Error: %s",
+            #             raw_config_dict,
+            #             e,
+            #         )
+            #         raise ValueError(f"Invalid 'speculative_config' provided: {e}") from e
+
+
         if hf_overrides is None:
             hf_overrides = {}
 

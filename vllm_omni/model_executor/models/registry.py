@@ -39,19 +39,27 @@ _OMNI_MODELS = {
         "qwen3_omni_moe_talker",
         "Qwen3OmniMoeTalkerForConditionalGeneration",
     ),
-    "Qwen3OmniMoeTalkerCodePredictorForConditionalGeneration": (
-        "qwen3_omni_moe_talker",
-        "Qwen3OmniMoeTalkerCodePredictorForConditionalGeneration",
-    ),
+    # "Qwen3OmniMoeTalkerCodePredictorForConditionalGeneration": (
+    #     "qwen3_omni_moe_code_predictor_mtp",
+    #     "Qwen3OmniMoeTalkerCodePredictorForConditionalGeneration",
+    # ),
     "Qwen3OmniMoeCode2Wav": (
         "qwen3_omni_code2wav",
         "Qwen3OmniMoeCode2Wav",
     ),
 }
 
+_SPECULATIVE_DECODING_MODELS = {
+    "Qwen3OmniMoeTalkerCodePredictorForConditionalGeneration": (
+        "qwen3_omni_moe_code_predictor_mtp",
+        "Qwen3OmniMoeTalkerCodePredictorForConditionalGeneration"
+    ),
+}
+
 _VLLM_OMNI_MODELS = {
     **_VLLM_MODELS,
     **_OMNI_MODELS,
+    **_SPECULATIVE_DECODING_MODELS,
 }
 
 
@@ -70,6 +78,13 @@ OmniModelRegistry = _ModelRegistry(
                 class_name=cls_name,
             )
             for model_arch, (mod_relname, cls_name) in _OMNI_MODELS.items()
+        },
+        **{
+            model_arch: _LazyRegisteredModel(
+                module_name=f"vllm_omni.model_executor.models.{mod_relname}",
+                class_name=cls_name,
+            )
+            for model_arch, (mod_relname, cls_name) in _SPECULATIVE_DECODING_MODELS.items()
         },
     }
 )

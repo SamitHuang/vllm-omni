@@ -13,6 +13,7 @@ Architecture:
 """
 
 from . import patch  # noqa: F401
+from . import speculative  # noqa: F401  # Patch vLLM's SpeculativeMethod
 from .config import OmniModelConfig
 
 # Main entry points

@@ -81,8 +81,8 @@ class Qwen3OmniMoeForConditionalGeneration(
     
     Architecture:
     - Thinker: Multimodal understanding (text + audio + video) → text generation
-    - Talker: Text embeddings → 8-layer RVQ codec codes
-    - Code2Wav: 8-layer RVQ codes → audio waveform
+    - Talker: Text embeddings → RVQ codec codes
+    - Code2Wav: RVQ codes → audio waveform
     
     Usage:
         Set `model_stage` in vllm_config to one of: "thinker", "talker", "code2wav"
@@ -116,6 +116,14 @@ class Qwen3OmniMoeForConditionalGeneration(
 
         # Determine model stage
         self.model_stage = vllm_config.model_config.model_stage
+
+        # speculative handling
+
+        print(f"self.model_stage {self.model_stage}, "
+            f"vllm_config.model_config. {vllm_config.model_config},"
+            f"speculative_config {vllm_config.speculative_config}, \n "
+            f"draft_model_config {vllm_config.speculative_config.draft_model_config},\n"
+            f"vllm config {vllm_config}")
         
         if self.model_stage == "thinker":
             # Initialize thinker model (multimodal processing + text generation)
@@ -131,6 +139,7 @@ class Qwen3OmniMoeForConditionalGeneration(
             self.code_predictor = None
             self.code2wav = None      
         elif self.model_stage == "talker":
+            print(f"init talker ")
             self.thinker = None
             # Initialize talker model (text embeddings → codec codes)
             self.talker = init_vllm_registered_model(
@@ -141,7 +150,7 @@ class Qwen3OmniMoeForConditionalGeneration(
             )
             self.talker.init_multi_modal(thinker_config)
             self.model = self.talker
-            logger.debug(f"=================talker model {self.model}")
+            print(f"=================talker model {self.model}")
             self.code_predictor = None
             self.code2wav = None
         elif self.model_stage == "code_predictor":
@@ -156,7 +165,7 @@ class Qwen3OmniMoeForConditionalGeneration(
             )
             self.code_predictor.init_multi_modal(thinker_config)
             self.model = self.code_predictor
-            logger.debug(f"=================code_predictor model {self.model}")
+            print(f"=================code_predictor model {self.model}")
             self.code2wav = None 
         elif self.model_stage == "code2wav":
             self.thinker = None
@@ -420,7 +429,7 @@ class Qwen3OmniMoeForConditionalGeneration(
                     positions=positions[0] if positions.ndim > 1 else positions,
                     inputs_embeds=inputs_embeds,
                 )
-            
+            print(f"finished talker =========================")
             return OmniOutput(
                 text_hidden_states=talker_hidden,
                 multimodal_outputs=None,
@@ -428,6 +437,14 @@ class Qwen3OmniMoeForConditionalGeneration(
 
         # ========== Stage 2.2: Code Predictor ==========  
         elif self.model_stage == "code_predictor":
+            if input_ids is None and additional_information is None:
+                input_ids = torch.zeros(
+                    inputs_embeds.shape[0],
+                    dtype=torch.long,
+                    device=inputs_embeds.device,
+                )
+                additional_information = {}
+
             if isinstance(inputs_embeds, torch.Tensor) and inputs_embeds.ndim == 2:
                 inputs_embeds = inputs_embeds.unsqueeze(0)
 
@@ -437,11 +454,10 @@ class Qwen3OmniMoeForConditionalGeneration(
                 else inputs_embeds
             )
             if not isinstance(talker_hidden_states, torch.Tensor):
-                hidden_size = inputs_embeds.shape[-1] if isinstance(inputs_embeds, torch.Tensor) else (
-                    self.talker_config.text_config.hidden_size
-                    if hasattr(self, "talker_config") and self.talker_config is not None
+                hidden_size = self.talker_config.code_predictor_config.hidden_size \
+                    if hasattr(self, "talker_config") and self.talker_config is not None \
                     else self.config.text_config.hidden_size
-                )
+
                 device = inputs_embeds.device if isinstance(inputs_embeds, torch.Tensor) else (
                     input_ids.device if isinstance(input_ids, torch.Tensor)
                     else torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -458,6 +474,7 @@ class Qwen3OmniMoeForConditionalGeneration(
             elif talker_hidden_states.ndim == 2:
                 talker_hidden_states = talker_hidden_states.unsqueeze(0)
 
+            print(f"talker_hidden_states {talker_hidden_states.shape}, input_ids {input_ids.shape}")
             new_input_ids, inputs_embeds = self._talker_to_code_predictor(
                 talker_hidden_states=talker_hidden_states,
                 layer0_token_ids=input_ids,
@@ -473,6 +490,7 @@ class Qwen3OmniMoeForConditionalGeneration(
                     input_ids=input_ids,
                     inputs_embeds=inputs_embeds,
                 )
+            print(f"finish code_predictor================")
             return OmniOutput(
                 text_hidden_states=code_predictor_hidden,
                 multimodal_outputs=None,
@@ -828,7 +846,7 @@ class Qwen3OmniMoeForConditionalGeneration(
                 code2wav_weights.append((k, v))
             else:
                 logger.warning(f"Unknown weight prefix: {k}")
-        
+
         # Load thinker weights
         if self.thinker and thinker_weights:
             thinker_loaded = self.thinker.load_weights(thinker_weights)

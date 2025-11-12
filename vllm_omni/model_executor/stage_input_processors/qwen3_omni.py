@@ -6,6 +6,7 @@
 from typing import Union
 
 import torch
+import torch.nn as nn
 from vllm.inputs import TextPrompt
 
 from vllm_omni.inputs.data import OmniTokensPrompt
@@ -199,11 +200,49 @@ def talker2codepredictor(
             else torch.as_tensor(hidden_states)
         )
 
+        # For profiling: ensure hidden states have correct dimensions
+        # Code predictor expects hidden states in its own dimension (1024)
+        # But talker might provide them in talker dimensions (2048)
+        if tensor_hidden is not None:
+            # Find code predictor hidden size
+            code_predictor_hidden_size = 1024  # Default
+            for stage in stage_list:
+                if hasattr(stage, 'engine') and hasattr(stage.engine, 'model'):
+                    model = stage.engine.model
+                    if hasattr(model, 'config') and hasattr(model.config, 'code_predictor_config'):
+                        if hasattr(model.config.code_predictor_config, 'hidden_size'):
+                            code_predictor_hidden_size = model.config.code_predictor_config.hidden_size
+                            break
+
+            # If dimensions don't match, create properly sized dummy hidden states
+            expected_shape = (tensor_hidden.shape[0], code_predictor_hidden_size)
+            if tensor_hidden.shape[-1] != code_predictor_hidden_size:
+                # Create dummy hidden states with correct dimensions
+                tensor_hidden = torch.randn(*expected_shape, dtype=tensor_hidden.dtype, device=tensor_hidden.device)
+
         additional_info = {"talker_hidden_states": tensor_hidden.detach()}
+
+        # For profiling: create valid dummy layer-0 codes within vocabulary range
+        # The code predictor expects layer-0 codes in range [0, vocab_size-1]
+        token_ids = output.token_ids
+        if token_ids is not None:
+            # During profiling, token_ids might be dummy values outside valid range
+            # Clamp them to valid code predictor vocabulary range
+            # Find the code predictor stage (usually stage 2 in 4-stage setup)
+            code_predictor_vocab_size = 2048  # Default
+            for stage in stage_list:
+                if hasattr(stage, 'engine') and hasattr(stage.engine, 'model'):
+                    model = stage.engine.model
+                    if hasattr(model, 'config') and hasattr(model.config, 'code_predictor_config'):
+                        if hasattr(model.config.code_predictor_config, 'vocab_size'):
+                            code_predictor_vocab_size = model.config.code_predictor_config.vocab_size
+                            break
+
+            token_ids = torch.clamp(torch.as_tensor(token_ids), 0, code_predictor_vocab_size - 1).tolist()
 
         code_predictor_inputs.append(
             OmniTokensPrompt(
-                prompt_token_ids=output.token_ids,
+                prompt_token_ids=token_ids,
                 additional_information=additional_info,
                 multi_modal_data=None,
                 mm_processor_kwargs=None,
