@@ -91,7 +91,8 @@ pipeline `from_pretrained` and `generate_video` args are NOT compatible with dif
 
 - similar design to vllm
 - ComposablePipeline and PipelineStage Abstraction
-```
+
+```python
 from fastvideo.v1.pipelines.stages import (ConditioningStage, DecodingStage,
                                            DenoisingStage, InputValidationStage,
                                            LatentPreparationStage,
