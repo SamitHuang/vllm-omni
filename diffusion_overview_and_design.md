@@ -206,8 +206,15 @@ _OMNI_MODELS = {
         "diffusers_generator",
         "BaseDiffusionGenerator",
     ),
+     "NewImageGenModel": (
+        "new_image_dit",
+        "MyDiffusionGenerator",
+    ),
+    
 }
 ```
+
+
 
 - Solution 1: One univerasal diffusion model executor
 
