@@ -17,7 +17,7 @@ image = pipeline(prompt).images[0]
 
 ### Core Design and API 
 
-### Supported Model List 
+DiffusionPipeline
 
 ## Cache-DiT
 
@@ -32,6 +32,8 @@ image = pipe(prompt=prompt)
 ### Core Design and API 
 
 ### Supported Model List 
+
+Nearly all models in diffusers
 
 
 ## FastVideo
@@ -59,6 +61,11 @@ https://hao-ai-lab.github.io/blogs/fastvideo/
 
 
 ### Supported Model List 
+
+SGLang Diffusion support: https://github.com/sgl-project/sglang/blob/main/python/sglang/multimodal_gen/docs/support_matrix.md
+
+Different from FastVideo, SGLang Diffusion additionally supports image generation models QwenImage and Flux.dev, but lack optimization.
+
 
 
 ## General Diffusion Generator API for vllm-omni
