@@ -235,7 +235,7 @@ class BaseDiffusionGenerator():  # registry
         images = self.pipeline(prompts).images
 
         return images
-
+```
 
 - Solution 2: BaseDiffusionGenerator, inherit to multiple XXBackendDiffusionGenerator e.g. CacheDiTDiffusionGenerator
 
