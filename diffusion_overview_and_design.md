@@ -181,7 +181,7 @@ stage_args:
       max_batch_size: 1
     engine_args:
       model_stage: all
-      model_arch: QwenImagePipeline  ==> diff
+      model_arch: QwenImagePipeline #  ==> diff
       optimization:         #  DIFF: parse via stage_config?
         backend: cache-dit
         cache_config: "{max_warmup_steps: 8, ...}"
