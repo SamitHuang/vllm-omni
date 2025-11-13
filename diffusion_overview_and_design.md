@@ -177,14 +177,15 @@ stage_args:
   - stage_id: 0
     runtime:
       process: true
-      devices: "0"            # TODO: changes for different devices, allow parse via CLI args 
+      devices: "0"            # TODO: allow parse via CLI args 
       max_batch_size: 1
     engine_args:
       model_stage: all
       model_arch: QwenImagePipeline #  ==> diff
-      optimization:         #  DIFF: parse via stage_config?
-        backend: cache-dit
+      model_backend: cache-dit   # option: cache-dit, fastvideo, diffusers, native
+      backend_config:         #  DIFF: parse via stage_config?
         cache_config: "{max_warmup_steps: 8, ...}"
+        parallel_config: "{ulysses_size=2, backend=ParallelismBackend.NATIVE_DIFFUSER}" 
       worker_cls: vllm_omni.worker.gpu_diffusion_worker.GPUDiffusionWorker
       scheduler_cls: vllm_omni.core.sched.diffusion_scheduler.DiffusionScheduler
       gpu_memory_utilization: 0.15
@@ -216,11 +217,12 @@ _OMNI_MODELS = {
 
 
 
-- Solution 1: One univerasal diffusion model executor
+- Solution 1: One univerasal diffusion model executor to support different backends
 
 ```python
 # vllm_omni/model_executor/models/diffusers_pipeline.py
 from diffusers import DiffusionPipeline
+from cache_dit import DBCacheConfig, ParallelismConfig, ParallelismBackend
 
 class BaseDiffusionGenerator():  # registry 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
@@ -231,7 +233,13 @@ class BaseDiffusionGenerator():  # registry
         )
 
         if vllm_config.optimization == 'cache-dit':
-            cache_dit.enable_cache(self.pipeline)
+            cache_config = get_cachedit_cache_config()
+            parallel_config = get_cachedit_parallel_config()
+            cache_dit.enable_cache(
+                self.pipeline,
+                cache_config=DBCacheConfig(**cache_config),   
+                parallelism_config=ParallelismConfig(**paralel_config)
+                )
 
     def get_diffusion_config(self, vllm_config):
         # extract diffusers config from vllm_config, including model name, dtype, etc
@@ -244,7 +252,12 @@ class BaseDiffusionGenerator():  # registry
         return images
 ```
 
-- Solution 2: BaseDiffusionGenerator, inherit to multiple XXBackendDiffusionGenerator e.g. CacheDiTDiffusionGenerator
+Q: how to support diffusion parallel config in this solution?
+
+## stage worker and diffusion parallel support
+
+
+- Solution 2: Inherit BaseDiffusionGenerator, each backend has its own XXBackendDiffusionGenerator e.g. CacheDiTDiffusionGenerator
 
 ```python
 import cache_dit
@@ -260,7 +273,7 @@ class DiTCacheGenerator(BaseDiffusionGenerator):
         return images
 ```
 
-issue: can acheive one-to-many mapping via model registry, same model_arch + different backend option --> different  model execution class 
+issue: one-to-many mapping is not allowed in vllm via model registry, i.e. same model_arch + different backend option --> different model execution class 
 
 Requres Changes:
 1. modify `get_model_architecture()`, to parse `_class_name` from HF diffusers config
