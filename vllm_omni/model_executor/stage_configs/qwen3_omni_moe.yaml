@@ -17,26 +17,26 @@ stage_args:
   #   final_output: true
   #   final_output_type: text
 
-   - stage_id: 1
-     engine_args:
-       model_stage: talker
-       model_arch: Qwen3OmniMoeForConditionalGeneration
-       worker_cls: vllm_omni.worker.gpu_ar_worker.GPUARWorker
-       scheduler_cls: vllm_omni.core.sched.scheduler.OmniScheduler
-       gpu_memory_utilization: 0.7
-       enforce_eager: true
-       trust_remote_code: true
-       engine_output_type: latent  # Output codec codes for code2wav
-       speculative_config:
-         model: "/workspace/models/Qwen3-Omni-30B-A3B-Instruct"  # Same model path as main model
-         num_speculative_tokens: 16  # Predict 16 residual layers (layers 1-7)
-         method: qwen3_omni_moe_code_predictor_mtp
-#         model_stage: code_predictor
-#         model_arch: Qwen3OmniMoeForConditionalGeneration
-#         worker_cls: vllm_omni.worker.gpu_ar_worker.GPUARWorker
-#         scheduler_cls: vllm_omni.core.sched.scheduler.OmniScheduler
-     engine_input_source: [0]
-     custom_process_input_func: vllm_omni.model_executor.stage_input_processors.qwen3_omni.thinker2talker
+#   - stage_id: 1
+#     engine_args:
+#       model_stage: talker
+#       model_arch: Qwen3OmniMoeForConditionalGeneration
+#       worker_cls: vllm_omni.worker.gpu_ar_worker.GPUARWorker
+#       scheduler_cls: vllm_omni.core.sched.scheduler.OmniScheduler
+#       gpu_memory_utilization: 0.7
+#       enforce_eager: true
+#       trust_remote_code: true
+#       engine_output_type: latent  # Output codec codes for code2wav
+#       speculative_config:
+#         model: "/workspace/models/Qwen3-Omni-30B-A3B-Instruct"  # Same model path as main model
+#         num_speculative_tokens: 16
+#         method: qwen3_omni_moe_code_predictor_mtp
+##         model_stage: code_predictor
+##         model_arch: Qwen3OmniMoeForConditionalGeneration
+##         worker_cls: vllm_omni.worker.gpu_ar_worker.GPUARWorker
+##         scheduler_cls: vllm_omni.core.sched.scheduler.OmniScheduler
+#     engine_input_source: [0]
+#     custom_process_input_func: vllm_omni.model_executor.stage_input_processors.qwen3_omni.thinker2talker
   
 #  - stage_id: 2
 #    engine_args:
@@ -55,19 +55,19 @@ stage_args:
 #    engine_input_source: [1]
 #    custom_process_input_func: vllm_omni.model_executor.stage_input_processors.qwen3_omni.talker2codepredictor
 
-#  - stage_id: 3
-#    engine_args:
-#      model_stage: code2wav
-#      model_arch: Qwen3OmniMoeForConditionalGeneration
-#      worker_cls: vllm_omni.worker.gpu_generation_worker.GPUGenerationWorker  # Specialized Generation worker (direct generation)
-#      scheduler_cls: vllm_omni.core.sched.generation_scheduler.GenerationScheduler  # One-shot generation scheduler
-#      gpu_memory_utilization: 0.2
-#      enforce_eager: true
-#      trust_remote_code: true
-#      enable_prefix_caching: false
-#      engine_output_type: audio  # Final output: audio waveform
-#    engine_input_source: [2]
-#    custom_process_input_func: vllm_omni.model_executor.stage_input_processors.qwen3_omni.talker2code2wav
-#    final_output: true
-#    final_output_type: audio
+  - stage_id: 2
+    engine_args:
+      model_stage: code2wav
+      model_arch: Qwen3OmniMoeForConditionalGeneration
+      worker_cls: vllm_omni.worker.gpu_generation_worker.GPUGenerationWorker  # Specialized Generation worker (direct generation)
+      scheduler_cls: vllm_omni.core.sched.generation_scheduler.GenerationScheduler  # One-shot generation scheduler
+      gpu_memory_utilization: 0.2
+      enforce_eager: true
+      trust_remote_code: true
+      enable_prefix_caching: false
+      engine_output_type: audio  # Final output: audio waveform
+    engine_input_source: [2]
+    custom_process_input_func: vllm_omni.model_executor.stage_input_processors.qwen3_omni.talker2code2wav
+    final_output: true
+    final_output_type: audio
 

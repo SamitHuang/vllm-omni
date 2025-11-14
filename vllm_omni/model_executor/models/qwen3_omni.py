@@ -117,13 +117,7 @@ class Qwen3OmniMoeForConditionalGeneration(
         # Determine model stage
         self.model_stage = vllm_config.model_config.model_stage
 
-        # speculative handling
-
-        print(f"self.model_stage {self.model_stage}, "
-            f"vllm_config.model_config. {vllm_config.model_config},"
-            f"speculative_config {vllm_config.speculative_config}, \n "
-            f"draft_model_config {vllm_config.speculative_config.draft_model_config},\n"
-            f"vllm config {vllm_config}")
+        print(f"self.model_stage {self.model_stage}")
         
         if self.model_stage == "thinker":
             # Initialize thinker model (multimodal processing + text generation)
@@ -508,7 +502,9 @@ class Qwen3OmniMoeForConditionalGeneration(
                     device=inputs_embeds.device,
                 )
             )
-            
+
+            print(f"code {code}")
+
             # Remove EOS token if present
             if code[-1] == TALKER_CODEC_EOS_TOKEN_ID:
                 code = code[:-1]
@@ -547,24 +543,25 @@ class Qwen3OmniMoeForConditionalGeneration(
         
         # Convert to tensor if needed
         if isinstance(code, torch.Tensor):
-            code_tensor = code.to(dtype=torch.long, device=code2wav_dev)
+            talker_codes = code.to(dtype=torch.long, device=code2wav_dev)
         else:
-            code_tensor = torch.as_tensor(
+            talker_codes = torch.as_tensor(
                 code, dtype=torch.long, device=code2wav_dev
             )
-        
+
+        print(f"code_tensor shape {talker_codes.shape}")
         # Ensure shape is [batch=1, 8, T]
-        if code_tensor.ndim == 2:
+        if talker_codes.ndim == 2:
             # [8, T] → [1, 8, T]
-            code_tensor = code_tensor.unsqueeze(0)
-        elif code_tensor.ndim == 1:
-            # [T] → assume single layer, expand to 8 layers
-            code_tensor = code_tensor.unsqueeze(0).unsqueeze(0)
-            code_tensor = code_tensor.expand(1, 8, -1)
+            code_tensor = talker_codes.unsqueeze(0)
+        elif talker_codes.ndim == 1:
+            # [T] → assume single layer, expand to 16 layers
+            talker_codes = talker_codes.unsqueeze(0).unsqueeze(0)
+            talker_codes = talker_codes.expand(1, 16, -1)
         
         # Use chunked decode for memory efficiency
         audio_tensor = self.code2wav.chunked_decode(
-            code_tensor,
+            talker_codes,
             chunk_size=300,
             left_context_size=25,
         )

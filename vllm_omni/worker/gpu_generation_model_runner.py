@@ -6,9 +6,14 @@ This is a non-autoregressive model that doesn't require sampling or logits compu
 
 from __future__ import annotations
 
+import gc
+import logging
+import numpy as np
 from typing import Optional, Union
 
 import torch
+from vllm.multimodal.inputs import MultiModalKwargs
+from vllm.v1.attention.backends.utils import CommonAttentionMetadata
 from vllm.v1.core.sched.output import SchedulerOutput
 from vllm.v1.worker.gpu_model_runner import (
     EMPTY_MODEL_RUNNER_OUTPUT,
@@ -17,9 +22,11 @@ from vllm.v1.worker.gpu_model_runner import (
     set_forward_context,
 )
 
+from vllm.v1.worker.utils import sanity_check_mm_encoder_outputs
 from vllm_omni.outputs import OmniModelRunnerOutput
 from vllm_omni.worker.gpu_model_runner import OmniGPUModelRunner
 
+logger = logging.getLogger(__name__)
 
 class GPUGenerationModelRunner(OmniGPUModelRunner):
     """ Generation GPU model runner for direct generation.
@@ -260,3 +267,183 @@ class GPUGenerationModelRunner(OmniGPUModelRunner):
         else:
             return hidden_states, {}
 
+    @torch.inference_mode()
+    def _dummy_sampler_run(self, hidden_states: torch.Tensor) -> None:
+        logger.warning("Dummy sampler run is not implemented for diffusion model")
+        return None
+
+    @torch.inference_mode()
+    def _dummy_run(
+            self,
+            num_tokens: int,
+            capture_attn_cudagraph: bool = False,
+            skip_eplb: bool = False,
+            is_profile: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        # Padding for DP
+        num_pad, num_tokens_across_dp = self.get_dp_padding(num_tokens)
+        num_tokens += num_pad
+
+        # Set num_scheduled_tokens based on num_tokens and max_num_seqs
+        # for dummy run with LoRA so that the num_reqs collectively
+        # has num_tokens in total.
+        assert num_tokens <= self.scheduler_config.max_num_batched_tokens
+        max_num_reqs = self.scheduler_config.max_num_seqs
+        num_reqs = min(num_tokens, max_num_reqs)
+        min_tokens_per_req = num_tokens // num_reqs
+        num_scheduled_tokens_list = [min_tokens_per_req] * num_reqs
+        num_scheduled_tokens_list[-1] += num_tokens % num_reqs
+        assert sum(num_scheduled_tokens_list) == num_tokens
+        assert len(num_scheduled_tokens_list) == num_reqs
+        num_scheduled_tokens = np.array(num_scheduled_tokens_list, dtype=np.int32)
+
+        attn_metadata: Optional[dict[str, dict]] = None
+        if capture_attn_cudagraph:
+            attn_metadata = {}
+
+            # Make sure max_model_len is used at the graph capture time.
+            self.seq_lens_np[:num_reqs] = self.max_model_len
+            self.seq_lens_np[num_reqs:] = 0
+            self.seq_lens[:num_reqs].copy_(
+                self.seq_lens_cpu[:num_reqs], non_blocking=True
+            )
+
+            for kv_cache_group_id, kv_cache_group_spec in enumerate(
+                    self.kv_cache_config.kv_cache_groups
+            ):
+                common_attn_metadata = CommonAttentionMetadata(
+                    query_start_loc=self.query_start_loc[: num_reqs + 1],
+                    query_start_loc_cpu=self.query_start_loc_cpu[: num_reqs + 1],
+                    seq_lens=self.seq_lens[:num_reqs],
+                    seq_lens_cpu=self.seq_lens_cpu[:num_reqs],
+                    num_computed_tokens_cpu=self.input_batch.num_computed_tokens_cpu_tensor[  # noqa: E501
+                                            :num_reqs
+                                            ],
+                    num_reqs=num_reqs,
+                    num_actual_tokens=num_tokens,
+                    max_query_len=num_tokens,
+                    block_table_tensor=self.input_batch.block_table[
+                                           kv_cache_group_id
+                                       ].get_device_tensor()[:num_reqs],
+                    slot_mapping=self.input_batch.block_table[
+                                     kv_cache_group_id
+                                 ].slot_mapping[:num_tokens],
+                    causal=True,
+                )
+
+                for attn_group in self.attn_groups[kv_cache_group_id]:
+                    attn_metadata_i = (
+                        attn_group.metadata_builder.build_for_cudagraph_capture(
+                            common_attn_metadata
+                        )
+                    )
+                    for layer_name in kv_cache_group_spec.layer_names:
+                        attn_metadata[layer_name] = attn_metadata_i
+
+        with self.maybe_dummy_run_with_lora(self.lora_config, num_scheduled_tokens):
+            if self.is_multimodal_model:
+                input_ids = None
+                inputs_embeds = self.inputs_embeds[:num_tokens]
+                model_mm_kwargs = self._dummy_mm_kwargs(num_reqs)
+            else:
+                input_ids = self.input_ids[:num_tokens]
+                inputs_embeds = None
+                model_mm_kwargs = {}
+
+            if self.uses_mrope:
+                positions = self.mrope_positions[:, :num_tokens]
+            else:
+                positions = self.positions[:num_tokens]
+
+            if get_pp_group().is_first_rank:
+                intermediate_tensors = None
+            else:
+                if self.intermediate_tensors is None:
+                    self.intermediate_tensors = (
+                        self.model.make_empty_intermediate_tensors(
+                            batch_size=self.max_num_tokens,
+                            dtype=self.model_config.dtype,
+                            device=self.device,
+                        )
+                    )
+
+                intermediate_tensors = self.sync_and_slice_intermediate_tensors(
+                    num_tokens, None, False
+                )
+
+            # Diffusion path: avoid CUDA graphs; we only use context for resource wiring
+            with self.maybe_randomize_inputs(input_ids), set_forward_context(
+                    attn_metadata,
+                    self.vllm_config,
+                    num_tokens=num_tokens,
+                    num_tokens_across_dp=num_tokens_across_dp,
+            ):
+                outputs = self.model(
+                    input_ids=input_ids,
+                    positions=positions,
+                    intermediate_tensors=intermediate_tensors,
+                    inputs_embeds=inputs_embeds,
+                    **MultiModalKwargs.as_kwargs(
+                        model_mm_kwargs,
+                        device=self.device,
+                    ),
+                    sampler=None,
+                )
+
+            if self.use_aux_hidden_state_outputs:
+                hidden_states, _ = outputs
+            else:
+                hidden_states = outputs
+
+            # Extract multimodal outputs if present; we ignore them here because
+            # dummy run returns tensors only. The actual diffusion runner returns
+            # multimodal outputs via pooler_output in execute_model.
+            text_hidden_states, _ = self.extract_multimodal_outputs(hidden_states)
+
+            if not skip_eplb:
+                self.eplb_step(is_dummy=True, is_profile=is_profile)
+
+        # logit_indices = np.cumsum(num_scheduled_tokens) - 1  # unused variable
+        return text_hidden_states, None
+
+    def profile_run(self) -> None:
+        # Profile with multimodal encoder & encoder cache, similar to base but
+        # without any logits/sampler warming.
+        if self.is_multimodal_model:
+            mm_budget = self.mm_budget
+            assert mm_budget is not None
+
+            # TODO: handle encoder-decoder models once supported.
+            if (mm_budget.get_encoder_budget()) > 0:  # encoder_budget unused
+                (
+                    dummy_modality,
+                    max_tokens,
+                ) = mm_budget.get_modality_with_max_tokens()
+                (
+                    max_mm_items_per_prompt,
+                    max_mm_items_per_batch,
+                ) = mm_budget.get_max_items(dummy_modality, max_tokens)
+
+                batched_dummy_mm_inputs = self._get_mm_dummy_batch(
+                    dummy_modality,
+                    max_mm_items_per_batch,
+                )
+
+                dummy_encoder_outputs = self.model.get_multimodal_embeddings(
+                    **batched_dummy_mm_inputs
+                )
+
+                sanity_check_mm_encoder_outputs(
+                    dummy_encoder_outputs,
+                    expected_num_items=max_mm_items_per_batch,
+                )
+
+                self.encoder_cache["tmp"] = dict(enumerate(dummy_encoder_outputs))
+
+        hidden_states, _ = self._dummy_run(self.max_num_tokens, is_profile=True)
+        if get_pp_group().is_last_rank:
+            pass  # No sampler/pooler warmup for diffusion
+        self._sync_device()
+        del hidden_states
+        self.encoder_cache.clear()
+        gc.collect()

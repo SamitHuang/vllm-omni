@@ -14,19 +14,18 @@ from torch.nn.parameter import Parameter
 from transformers.models.qwen3_omni_moe.configuration_qwen3_omni_moe import (
     Qwen3OmniMoeCode2WavConfig,
 )
+from transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe import (
+            Qwen3OmniMoeCode2WavTransformerModel,
+        )
 
 from vllm.config import VllmConfig
 from vllm.logger import init_logger
-from vllm.model_executor.layers.activation import _ACTIVATION_REGISTRY
-from vllm.model_executor.model_loader.weight_utils import default_weight_loader
 from vllm.model_executor.models.utils import (
     AutoWeightsLoader,
     WeightsMapper,
     maybe_prefix,
 )
 
-# Import Qwen2 model for the pre-transformer backbone
-from .qwen2 import Qwen2Model
 
 logger = init_logger(__name__)
 
@@ -277,58 +276,64 @@ class Qwen3OmniMoeCode2Wav(nn.Module):
     
     input_modalities = "audio"
 
+    # Weight mapper
+    hf_to_vllm_mapper = WeightsMapper(
+        orig_to_new_prefix={
+            "code2wav.pre_transformer.": "pre_transformer.",
+            "code2wav.code_embedding.": "code_embedding.",
+            "code2wav.upsample.": "upsample.",
+            "code2wav.decoder.": "decoder.",
+            "code2wav.": "",
+        }
+    )
+
     def __init__(
         self,
-        config: Qwen3OmniMoeCode2WavConfig,
+        *,
         vllm_config: VllmConfig | None = None,
         prefix: str = "",
     ):
         super().__init__()
-        self.config = config
-        
+        code2wav_config: Qwen3OmniMoeCode2WavConfig = (
+            vllm_config.model_config.hf_config
+        )
+
+        self.config = code2wav_config
+
+        print(f"self.config {self.config}")
+
         # Calculate total upsampling factor
         self.total_upsample = np.prod(
-            config.upsample_rates + config.upsampling_ratios
+            self.config.upsample_rates + self.config.upsampling_ratios
         )
         
-        # Pre-transformer: Qwen2 model for temporal context
-        # Use existing vLLM Qwen2 implementation
-        if vllm_config is not None:
-            self.pre_transformer = Qwen2Model(
-                vllm_config=vllm_config.with_hf_config(config),
-                prefix=maybe_prefix(prefix, "pre_transformer"),
-            )
-        else:
-            # For standalone usage without vLLM config
-            from transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe import (
-                Qwen3OmniMoeCode2WavTransformerModel,
-            )
-            self.pre_transformer = Qwen3OmniMoeCode2WavTransformerModel._from_config(
-                config
-            )
+        # Pre-transformer
+        self.pre_transformer = Qwen3OmniMoeCode2WavTransformerModel._from_config(
+            self.config
+        )
         
         # Code embedding: Single embedding table for all RVQ layers
         self.code_embedding = nn.Embedding(
-            config.codebook_size * config.num_quantizers, config.hidden_size
+            self.config.codebook_size * self.config.num_quantizers, self.config.hidden_size
         )
         
         # Offset for each RVQ layer (layer 0: 0-1023, layer 1: 1024-2047, etc.)
         self.register_buffer(
             "code_offset",
-            torch.arange(config.num_quantizers).view(1, -1, 1) * config.codebook_size,
+            torch.arange(self.config.num_quantizers).view(1, -1, 1) * self.config.codebook_size,
             persistent=False,
         )
 
         # Upsampling blocks (e.g., 2x, 2x)
         upsample = []
-        for factor in config.upsampling_ratios:
+        for factor in self.config.upsampling_ratios:
             upsample.append(
                 nn.ModuleList(
                     [
                         Qwen3OmniMoeCausalTransConvNet(
-                            config.hidden_size, config.hidden_size, factor, factor
+                            self.config.hidden_size, self.config.hidden_size, factor, factor
                         ),
-                        Qwen3OmniMoeConvNeXtBlock(config.hidden_size),
+                        Qwen3OmniMoeConvNeXtBlock(self.config.hidden_size),
                     ]
                 )
             )
@@ -337,16 +342,16 @@ class Qwen3OmniMoeCode2Wav(nn.Module):
         # Decoder: Initial projection + progressive upsampling blocks
         decoder = [
             Qwen3OmniMoeCausalConvNet(
-                config.hidden_size, config.decoder_dim, kernel_size=7
+                self.config.hidden_size, self.config.decoder_dim, kernel_size=7
             )
         ]
         
         # Add decoder blocks (each upsamples and reduces channels)
-        for i in range(len(config.upsample_rates)):
-            decoder.append(Qwen3OmniMoeCode2WavDecoderBlock(config, i))
+        for i in range(len(self.config.upsample_rates)):
+            decoder.append(Qwen3OmniMoeCode2WavDecoderBlock(self.config, i))
         
         # Final projection to waveform
-        output_dim = config.decoder_dim // 2 ** len(config.upsample_rates)
+        output_dim = self.config.decoder_dim // 2 ** len(self.config.upsample_rates)
         decoder += [
             SnakeBeta(output_dim),
             Qwen3OmniMoeCausalConvNet(output_dim, 1, kernel_size=7),
@@ -375,18 +380,7 @@ class Qwen3OmniMoeCode2Wav(nn.Module):
         # Shape: [batch, seq_len, hidden_size]
         
         # Stage 2: Pre-Transformer (add temporal context)
-        if hasattr(self.pre_transformer, 'forward'):
-            # vLLM Qwen2Model
-            hidden = self.pre_transformer(
-                input_ids=None,
-                positions=torch.arange(hidden.shape[1], device=hidden.device).unsqueeze(0),
-                kv_caches=None,
-                attn_metadata=None,
-                inputs_embeds=hidden,
-            )
-        else:
-            # Transformers model
-            hidden = self.pre_transformer(inputs_embeds=hidden).last_hidden_state
+        hidden = self.pre_transformer(inputs_embeds=hidden).last_hidden_state
         # Shape: [batch, seq_len, hidden_size]
         
         # Stage 3: Upsampling
@@ -448,45 +442,11 @@ class Qwen3OmniMoeCode2Wav(nn.Module):
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         """Load weights from HuggingFace checkpoint."""
-        # Weight mapper
-        mapper = WeightsMapper(
-            orig_to_new_prefix={
-                "code2wav.pre_transformer.": "pre_transformer.",
-                "code2wav.code_embedding.": "code_embedding.",
-                "code2wav.upsample.": "upsample.",
-                "code2wav.decoder.": "decoder.",
-                "code2wav.": "",
-            }
+        loader = AutoWeightsLoader(
+            self,
+            skip_prefixes=["thinker.", "talker."],  # Already loaded above
         )
-        
-        # Separate weights: pre_transformer vs rest of model
-        pre_transformer_weights = []
-        other_weights = []
-        
-        for name, tensor in weights:
-            # Apply mapper first
-            new_name = mapper.apply(name)
-            
-            if new_name.startswith("pre_transformer."):
-                pre_transformer_weights.append((new_name, tensor))
-            else:
-                other_weights.append((new_name, tensor))
-        
-        loaded_weights = set()
-        
-        # Load pre_transformer weights separately (it's a Qwen2Model)
-        if pre_transformer_weights:
-            pt_loaded = self.pre_transformer.load_weights(pre_transformer_weights)
-            loaded_weights.update(pt_loaded)
-        
-        # Load other weights using AutoWeightsLoader
-        if other_weights:
-            loader = AutoWeightsLoader(
-                self,
-                skip_prefixes=["pre_transformer."],  # Already loaded above
-            )
-            other_loaded = loader.load_weights(other_weights, mapper=None)  # Already mapped
-            loaded_weights.update(other_loaded)
+        loaded = loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
         
         # Log load summary
         try:
@@ -505,6 +465,6 @@ class Qwen3OmniMoeCode2Wav(nn.Module):
         except Exception:
             pass
         
-        return loaded_weights
+        return loaded
 
 
