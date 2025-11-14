@@ -1,4 +1,5 @@
-from typing import Optional
+from dataclasses import field
+from typing import Any, Dict, Optional
 
 from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
@@ -16,6 +17,8 @@ class OmniModelConfig(ModelConfig):
     model_stage: str = "thinker"
     model_arch: str = "Qwen2_5OmniForConditionalGeneration"
     engine_output_type: Optional[str] = None
+    model_backend: str = "native"
+    backend_config: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def registry(self):

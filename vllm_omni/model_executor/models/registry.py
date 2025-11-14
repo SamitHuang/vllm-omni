@@ -26,6 +26,27 @@ _OMNI_MODELS = {
         "Qwen2_5OmniToken2WavModel",
     ),
     "Qwen2ForCausalLM_old": ("qwen2_old", "Qwen2ForCausalLM"),  # need to discuss
+    
+    # Diffusers pipeline models
+    # Note: Users should specify the actual pipeline class name (e.g., "QwenImagePipeline")
+    # from model_index.json's "_class_name" field, not the generic "DiffusersPipeline"
+    "QwenImagePipeline": (
+        "diffusers_generator",
+        "DiffusersPipelineGenerator",
+    ),
+    "FluxPipeline": (
+        "diffusers_generator",
+        "DiffusersPipelineGenerator",
+    ),
+    "StableDiffusionPipeline": (
+        "diffusers_generator",
+        "DiffusersPipelineGenerator",
+    ),
+    "StableVideoDiffusionPipeline": (
+        "diffusers_generator",
+        "DiffusersPipelineGenerator",
+    ),
+    # Add more pipeline classes as needed
 }
 
 _VLLM_OMNI_MODELS = {

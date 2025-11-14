@@ -1,0 +1,39 @@
+# Stage config for Qwen-Image using cache-dit backend
+stage_args:
+  - stage_id: 0
+    runtime:
+      process: true
+      devices: "0"
+      max_batch_size: 1
+    engine_args:
+      model_stage: all
+      model_arch: QwenImagePipeline
+      model_backend: cache-dit
+      backend_config:
+        pipeline_config:
+          torch_dtype: "bfloat16"
+        cache_config:
+          Fn_compute_blocks: 8
+          Bn_compute_blocks: 0
+          max_warmup_steps: 8
+          residual_diff_threshold: 0.08
+          max_cached_steps: -1
+          max_continuous_cached_steps: -1
+        parallel_config:
+          backend: "NATIVE_DIFFUSER"
+          ulysses_size: 2
+          ring_size: null
+          tp_size: null
+          parallel_kwargs:
+            attention_backend: "flash"
+      worker_cls: vllm_omni.worker.gpu_diffusion_worker.GPUDiffusionWorker
+      scheduler_cls: vllm_omni.core.sched.diffusion_scheduler.DiffusionScheduler
+      gpu_memory_utilization: 0.8
+      enforce_eager: true
+      trust_remote_code: true
+      enable_prefix_caching: false
+      engine_output_type: image
+    final_output: true
+    final_output_type: image
+
+

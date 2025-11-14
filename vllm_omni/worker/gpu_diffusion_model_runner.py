@@ -280,31 +280,79 @@ class GPUDiffusionModelRunner(OmniGPUModelRunner):
         """Runs the diffusion process and returns per-request tensors.
 
         Tries model interfaces in the following order for maximal compatibility:
-        1) model.sample(condition=..., **kwargs)
-        2) model.forward(condition=..., **kwargs)
-        3) model.diffuse(condition=..., **kwargs)
+        1) model.sample() (preferred interface per design doc)
+        2) DiffusersPipelineGenerator.sample() (diffusers integration)
+        3) model.forward() (existing implementations)
+        4) model.diffuse() (alternative interface)
         """
-        # Keep inputs identical to AR runner
+        # Extract prompts from sampling_metadata
+        prompts = self._extract_prompts_from_metadata()
+        
+        # Prepare kwargs for sample method
         kwargs = dict(
-            input_ids=input_ids,
-            positions=positions,
-            intermediate_tensors=intermediate_tensors,
-            inputs_embeds=inputs_embeds,
+            prompts=prompts,
             **MultiModalKwargs.as_kwargs(multimodal_kwargs, device=self.device),
             sampling_metadata=self.input_batch.sampling_metadata,
-            logits_index=logits_indices,
-            sampler=self.sampler,
         )
-
-        # For Qwen 2.5 Omni's current implementation, we only support the forward method
+        
+        # Add diffusion-specific parameters from kwargs if available
+        # (num_inference_steps, guidance_scale, height, width, etc.)
+        
+        # Check if model is DiffusersPipelineGenerator (diffusers integration)
+        try:
+            from vllm_omni.model_executor.models.diffusers_pipeline_generator import (
+                DiffusersPipelineGenerator
+            )
+            if isinstance(self.model, DiffusersPipelineGenerator):
+                return self.model.sample(**kwargs)
+        except ImportError:
+            pass
+        
+        # Try sample method first (per design doc)
+        if hasattr(self.model, "sample"):
+            return self.model.sample(**kwargs)
+        
+        # Fallback to forward method
         if hasattr(self.model, "forward"):
-            return self.model.forward(**kwargs)
-        # TODO: add the diffuse method for other models
+            # For backward compatibility, also try forward with full kwargs
+            forward_kwargs = dict(
+                input_ids=input_ids,
+                positions=positions,
+                intermediate_tensors=intermediate_tensors,
+                inputs_embeds=inputs_embeds,
+                **MultiModalKwargs.as_kwargs(multimodal_kwargs, device=self.device),
+                sampling_metadata=self.input_batch.sampling_metadata,
+                logits_index=logits_indices,
+                sampler=self.sampler,
+            )
+            return self.model.forward(**forward_kwargs)
+        
+        # Try diffuse method
+        if hasattr(self.model, "diffuse"):
+            return self.model.diffuse(**kwargs)
 
         raise RuntimeError(
-            "The loaded model does not expose diffusion interfaces 'sample', "
-            "'forward', or 'diffuse'. Please implement one of them or adapt the runner."
+            "The loaded model does not expose diffusion interfaces. "
+            "Expected one of: model.sample(), DiffusersPipelineGenerator.sample(), "
+            "model.forward(), or model.diffuse()"
         )
+    
+    def _extract_prompts_from_metadata(self) -> Optional[List[str]]:
+        """Extract prompts from sampling_metadata"""
+        if self.input_batch.sampling_metadata is None:
+            return None
+        
+        prompts = []
+        # Extract prompts from seq_groups
+        # This depends on the actual structure of SamplingMetadata
+        if hasattr(self.input_batch.sampling_metadata, "seq_groups"):
+            for seq_group in self.input_batch.sampling_metadata.seq_groups:
+                if hasattr(seq_group, "request"):
+                    prompt = getattr(seq_group.request, "prompt", None)
+                    if prompt:
+                        prompts.append(prompt)
+        
+        return prompts if prompts else None
 
     @torch.inference_mode()
     def _dummy_run(

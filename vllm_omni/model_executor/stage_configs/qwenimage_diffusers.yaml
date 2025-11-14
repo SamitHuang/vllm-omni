@@ -1,0 +1,25 @@
+# Stage config for Qwen-Image using plain diffusers backend
+stage_args:
+  - stage_id: 0
+    runtime:
+      process: true
+      devices: "0"
+      max_batch_size: 1
+    engine_args:
+      model_stage: all
+      model_arch: QwenImagePipeline
+      model_backend: diffusers
+      backend_config:
+        pipeline_config:
+          torch_dtype: "bfloat16"
+      worker_cls: vllm_omni.worker.gpu_diffusion_worker.GPUDiffusionWorker
+      scheduler_cls: vllm_omni.core.sched.diffusion_scheduler.DiffusionScheduler
+      gpu_memory_utilization: 0.8
+      enforce_eager: true
+      trust_remote_code: true
+      enable_prefix_caching: false
+      engine_output_type: image
+    final_output: true
+    final_output_type: image
+
+

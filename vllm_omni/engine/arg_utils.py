@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from vllm.engine.arg_utils import EngineArgs
 from vllm_omni.config import OmniModelConfig
@@ -11,6 +11,8 @@ class OmniEngineArgs(EngineArgs):
     model_stage: str = "thinker"
     model_arch: str = "Qwen2_5OmniForConditionalGeneration"
     engine_output_type: Optional[str] = None
+    model_backend: str = "native"
+    backend_config: Optional[Dict[str, Any]] = None
 
     def create_model_config(self) -> OmniModelConfig:
         # First, get the base ModelConfig from the parent class
@@ -25,6 +27,12 @@ class OmniEngineArgs(EngineArgs):
         config_dict["model_stage"] = self.model_stage
         config_dict["model_arch"] = self.model_arch
         config_dict["engine_output_type"] = self.engine_output_type
+        config_dict["model_backend"] = (
+            self.model_backend or config_dict.get("model_backend", "diffusers")
+        )
+        config_dict["backend_config"] = self.backend_config or config_dict.get(
+            "backend_config", {}
+        )
 
         # Create and return the OmniModelConfig instance
         omni_config = OmniModelConfig(**config_dict)
