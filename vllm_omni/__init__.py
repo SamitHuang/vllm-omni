@@ -13,11 +13,27 @@ Architecture:
 """
 
 from . import patch  # noqa: F401
-from . import speculative  # noqa: F401  # Patch vLLM's SpeculativeMethod
+
+try:  # Patch vLLM's SpeculativeMethod when available
+    from . import speculative  # noqa: F401
+except Exception as exc:  # pragma: no cover - best-effort patching
+    import warnings
+
+    warnings.warn(
+        f"vLLM speculative patches skipped: {exc}",
+        RuntimeWarning,
+    )
 from .config import OmniModelConfig
 
 # Main entry points
-from .entrypoints.omni_llm import OmniLLM
+try:
+    from .entrypoints.omni_llm import OmniLLM
+except Exception as exc:  # pragma: no cover - optional dependency
+    OmniLLM = None  # type: ignore
+    warnings.warn(
+        f"OmniLLM import skipped: {exc}",
+        RuntimeWarning,
+    )
 
 __all__ = [
     # Main components
