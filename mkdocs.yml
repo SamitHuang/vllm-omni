@@ -87,7 +87,6 @@ plugins:
       show_full_namespace: false  # Show only module name, not full path
       exclude:
         - "re:vllm_omni\\._.*"  # Internal modules
-        - "vllm_omni.diffusion.models.qwen_image"  # Exclude package index, classes documented individually in README
   - mkdocstrings:
       handlers:
         python:
