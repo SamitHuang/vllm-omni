@@ -1,0 +1,70 @@
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Generic, TypeVar
+
+import torch
+
+
+class AttentionBackend(ABC):
+    """Abstract class for attention backends."""
+
+    accept_output_buffer: bool = False
+
+    @staticmethod
+    @abstractmethod
+    def get_name() -> str:
+        raise NotImplementedError
+
+    @staticmethod
+    @abstractmethod
+    def get_impl_cls() -> type["AttentionImpl"]:
+        raise NotImplementedError
+
+    @staticmethod
+    @abstractmethod
+    def get_metadata_cls() -> type["AttentionMetadata"]:
+        raise NotImplementedError
+
+    @staticmethod
+    @abstractmethod
+    def get_builder_cls():  # -> Type["AttentionMetadataBuilder"]:
+        raise NotImplementedError
+
+    @staticmethod
+    @abstractmethod
+    def get_supported_head_sizes() -> list[int]:
+        """Get the list of supported head sizes for this backend."""
+        raise NotImplementedError
+
+
+@dataclass
+class AttentionMetadata:
+    pass
+
+
+T = TypeVar("T", bound=AttentionMetadata)
+
+
+class AttentionImpl(ABC, Generic[T]):
+    @abstractmethod
+    def __init__(
+        self,
+        num_heads: int,
+        head_size: int,
+        softmax_scale: float,
+        causal: bool = False,
+        num_kv_heads: int | None = None,
+        prefix: str = "",
+        **extra_impl_args,
+    ) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def forward(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        attn_metadata: T,
+    ) -> torch.Tensor:
+        raise NotImplementedError
