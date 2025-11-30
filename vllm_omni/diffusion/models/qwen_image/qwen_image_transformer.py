@@ -360,19 +360,6 @@ class QwenImageTransformerBlock(nn.Module):
             nn.Linear(dim, 6 * dim, bias=True),  # For scale, shift, gate for norm1 and norm2
         )
         self.img_norm1 = nn.LayerNorm(dim, elementwise_affine=False, eps=eps)
-        # self.attn = Attention(
-        #     query_dim=dim,
-        #     cross_attention_dim=None,  # Enable cross attention for joint computation
-        #     added_kv_proj_dim=dim,  # Enable added KV projections for text stream
-        #     dim_head=attention_head_dim,
-        #     heads=num_attention_heads,
-        #     out_dim=dim,
-        #     context_pre_only=False,
-        #     bias=True,
-        #     processor=QwenDoubleStreamAttnProcessor2_0(),
-        #     qk_norm=qk_norm,
-        #     eps=eps,
-        # )
         self.attn = QwenImageCrossAttention(
             dim=dim,
             num_heads=num_attention_heads,

@@ -38,6 +38,7 @@ class Attention(nn.Module):
         value: torch.Tensor,
         attn_metadata: AttentionMetadata = None,
     ) -> torch.Tensor:
-        # x shape: (seq_len, batch_size, embed_dim)
+        # shape: (batch_size, seq_len, num_heads, head_size)
+        print("attention shape:", query.shape, key.shape, value.shape)
         attn_output = self.attention.forward(query, key, value, attn_metadata)
         return attn_output
