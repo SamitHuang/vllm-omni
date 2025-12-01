@@ -295,6 +295,13 @@ def parse_args():
         default=None,
         help="Path to local video file or URL. If not provided and query-type is 'use_video', uses default video URL.",
     )
+    parser.add_argument(
+        "--prompt",
+        "-p",
+        type=str,
+        default=None,
+        help="Custom text prompt/question to use instead of the default prompt for the selected query type.",
+    )
 
     return parser.parse_args()
 

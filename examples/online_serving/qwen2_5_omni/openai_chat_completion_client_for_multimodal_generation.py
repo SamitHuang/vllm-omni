@@ -93,8 +93,8 @@ def get_system_prompt():
     }
 
 
-def get_text_query():
-    question = "Explain the system architecture for a scalable audio generation pipeline. Answer in 15 words."
+def get_text_query(custom_prompt: Optional[str] = None):
+    question = custom_prompt or "Explain the system architecture for a scalable audio generation pipeline. Answer in 15 words."
     prompt = {
         "role": "user",
         "content": [
@@ -107,8 +107,8 @@ def get_text_query():
     return prompt
 
 
-def get_mixed_modalities_query(video_path: Optional[str] = None):
-    question = "What is recited in the audio? What is the content of this image? Why is this video funny?"
+def get_mixed_modalities_query(video_path: Optional[str] = None, custom_prompt: Optional[str] = None):
+    question = custom_prompt or "What is recited in the audio? What is the content of this image? Why is this video funny?"
     video_url = get_video_url_from_path(video_path)
     prompt = {
         "role": "user",
@@ -139,8 +139,8 @@ def get_mixed_modalities_query(video_path: Optional[str] = None):
     return prompt
 
 
-def get_use_audio_in_video_query(video_path: Optional[str] = None):
-    question = "Describe the content of the video, then convert what the baby say into text."
+def get_use_audio_in_video_query(video_path: Optional[str] = None, custom_prompt: Optional[str] = None):
+    question = custom_prompt or "Describe the content of the video, then convert what the baby say into text."
     video_url = get_video_url_from_path(video_path)
 
     prompt = {
@@ -163,8 +163,8 @@ def get_use_audio_in_video_query(video_path: Optional[str] = None):
     return prompt
 
 
-def get_multi_audios_query():
-    question = "Are these two audio clips the same?"
+def get_multi_audios_query(custom_prompt: Optional[str] = None):
+    question = custom_prompt or "Are these two audio clips the same?"
     prompt = {
         "role": "user",
         "content": [
@@ -230,13 +230,16 @@ def run_multimodal_generation(args) -> None:
         code2wav_sampling_params,
     ]
 
-    # Get video path from args if query type uses video
+    # Get video path and custom prompt from args
     video_path = getattr(args, 'video_path', None)
+    custom_prompt = getattr(args, 'prompt', None)
     
-    # Get the query function and call it with video_path if applicable
+    # Get the query function and call it with appropriate parameters
     query_func = query_map[args.query_type]
     if args.query_type in ("mixed_modalities", "use_audio_in_video"):
-        prompt = query_func(video_path)
+        prompt = query_func(video_path=video_path, custom_prompt=custom_prompt)
+    elif args.query_type in ("text", "multi_audios"):
+        prompt = query_func(custom_prompt=custom_prompt)
     else:
         prompt = query_func()
     
@@ -285,6 +288,13 @@ def parse_args():
         type=str,
         default=None,
         help="Path to local video file or URL. If not provided and query-type uses video, uses default video URL.",
+    )
+    parser.add_argument(
+        "--prompt",
+        "-p",
+        type=str,
+        default=None,
+        help="Custom text prompt/question to use instead of the default prompt for the selected query type.",
     )
 
     return parser.parse_args()
