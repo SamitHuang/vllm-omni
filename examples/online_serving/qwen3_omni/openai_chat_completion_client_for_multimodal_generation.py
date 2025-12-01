@@ -45,7 +45,7 @@ def encode_base64_content_from_file(file_path: str) -> str:
 
 def get_video_url_from_path(video_path: Optional[str]) -> str:
     """Convert a video path (local file or URL) to a video URL format for the API.
-    
+
     If video_path is None or empty, returns the default URL.
     If video_path is a local file path, encodes it to base64 data URL.
     If video_path is a URL, returns it as-is.
@@ -53,31 +53,31 @@ def get_video_url_from_path(video_path: Optional[str]) -> str:
     if not video_path:
         # Default video URL
         return "https://huggingface.co/datasets/raushan-testing-hf/videos-test/resolve/main/sample_demo_1.mp4"
-    
+
     # Check if it's a URL (starts with http:// or https://)
     if video_path.startswith(("http://", "https://")):
         return video_path
-    
+
     # Otherwise, treat it as a local file path
     if not os.path.exists(video_path):
         raise FileNotFoundError(f"Video file not found: {video_path}")
-    
+
     # Detect video MIME type from file extension
     video_path_lower = video_path.lower()
-    if video_path_lower.endswith('.mp4'):
-        mime_type = 'video/mp4'
-    elif video_path_lower.endswith('.webm'):
-        mime_type = 'video/webm'
-    elif video_path_lower.endswith('.mov'):
-        mime_type = 'video/quicktime'
-    elif video_path_lower.endswith('.avi'):
-        mime_type = 'video/x-msvideo'
-    elif video_path_lower.endswith('.mkv'):
-        mime_type = 'video/x-matroska'
+    if video_path_lower.endswith(".mp4"):
+        mime_type = "video/mp4"
+    elif video_path_lower.endswith(".webm"):
+        mime_type = "video/webm"
+    elif video_path_lower.endswith(".mov"):
+        mime_type = "video/quicktime"
+    elif video_path_lower.endswith(".avi"):
+        mime_type = "video/x-msvideo"
+    elif video_path_lower.endswith(".mkv"):
+        mime_type = "video/x-matroska"
     else:
         # Default to mp4 if extension is unknown
-        mime_type = 'video/mp4'
-    
+        mime_type = "video/mp4"
+
     video_base64 = encode_base64_content_from_file(video_path)
     return f"data:{mime_type};base64,{video_base64}"
 
@@ -99,7 +99,9 @@ def get_system_prompt():
 
 
 def get_text_query(custom_prompt: Optional[str] = None):
-    question = custom_prompt or "Explain the system architecture for a scalable audio generation pipeline. Answer in 15 words."
+    question = (
+        custom_prompt or "Explain the system architecture for a scalable audio generation pipeline. Answer in 15 words."
+    )
     prompt = {
         "role": "user",
         "content": [
@@ -127,9 +129,7 @@ def get_video_query(video_path: Optional[str] = None, custom_prompt: Optional[st
         "content": [
             {
                 "type": "video_url",
-                "video_url": {
-                    "url": video_url
-                },
+                "video_url": {"url": video_url},
             },
             {
                 "type": "text",
@@ -228,9 +228,9 @@ def run_multimodal_generation(args) -> None:
     ]
 
     # Get video path and custom prompt from args
-    video_path = getattr(args, 'video_path', None)
-    custom_prompt = getattr(args, 'prompt', None)
-    
+    video_path = getattr(args, "video_path", None)
+    custom_prompt = getattr(args, "prompt", None)
+
     # Get the query function and call it with appropriate parameters
     query_func = query_map[args.query_type]
     if args.query_type == "use_video":
@@ -241,7 +241,7 @@ def run_multimodal_generation(args) -> None:
         prompt = query_func(custom_prompt=custom_prompt)
     else:
         prompt = query_func()
-    
+
     extra_body = {
         "sampling_params_list": sampling_params_list  # Optional, it has a default setting in stage_configs of the corresponding model.
     }
