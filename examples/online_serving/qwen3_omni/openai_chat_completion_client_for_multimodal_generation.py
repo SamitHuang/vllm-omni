@@ -224,9 +224,7 @@ def get_image_query(image_path: Optional[str] = None, custom_prompt: Optional[st
         "content": [
             {
                 "type": "image_url",
-                "image_url": {
-                    "url": image_url
-                },
+                "image_url": {"url": image_url},
             },
             {
                 "type": "text",

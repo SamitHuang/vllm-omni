@@ -206,9 +206,7 @@ def get_mixed_modalities_query(
             },
             {
                 "type": "image_url",
-                "image_url": {
-                    "url": image_url
-                },
+                "image_url": {"url": image_url},
             },
             {
                 "type": "video_url",
