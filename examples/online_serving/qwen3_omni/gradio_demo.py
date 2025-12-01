@@ -285,7 +285,9 @@ async def run_inference_async_omni(
             multi_modal_data["video"] = video_entry
             if use_audio_in_video and extracted_audio is not None and "audio" not in multi_modal_data:
                 # Data parser can handle single item or list, but processor expects list format
-                multi_modal_data["audio"] = [extracted_audio] if not isinstance(extracted_audio, list) else extracted_audio
+                multi_modal_data["audio"] = (
+                    [extracted_audio] if not isinstance(extracted_audio, list) else extracted_audio
+                )
                 mm_processor_kwargs["use_audio_in_video"] = True
 
         # Build the prompt input
