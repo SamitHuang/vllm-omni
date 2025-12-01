@@ -70,14 +70,6 @@ python openai_chat_completion_client_for_multimodal_generation.py \
 bash run_curl_multimodal_generation.sh mixed_modalities
 ```
 
-### FAQ
-
-If you encounter error about backend of librosa, try to install ffmpeg with command below.
-```
-sudo apt update
-sudo apt install ffmpeg
-```
-
 ## Run Local Web UI Demo
 
 This Web UI demo allows users to interact with the model through a web browser.
@@ -99,3 +91,11 @@ The gradio script supports the following arguments:
 - `--port`: Port for Gradio server (default: 7861)
 - `--stage-configs-path`: Path to custom stage configs YAML file (optional)
 - `--share`: Share the Gradio demo publicly (creates a public link)
+
+### FAQ
+
+If you encounter error about backend of librosa, try to install ffmpeg with command below.
+```
+sudo apt update
+sudo apt install ffmpeg
+```
