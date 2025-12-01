@@ -105,7 +105,7 @@ python gradio_demo.py \
     --port 7861
 ```
 
-Availabe options:
+Available options:
 
 - `--model`: Model name
 - `--ip`: Host/IP for Gradio server (default: 127.0.0.1)
