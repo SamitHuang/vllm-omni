@@ -1,4 +1,6 @@
 import base64
+import os
+from typing import Optional
 
 import requests
 from openai import OpenAI
@@ -26,6 +28,53 @@ def encode_base64_content_from_url(content_url: str) -> str:
         result = base64.b64encode(response.content).decode("utf-8")
 
     return result
+
+
+def encode_base64_content_from_file(file_path: str) -> str:
+    """Encode a local file to base64 format."""
+    with open(file_path, "rb") as f:
+        content = f.read()
+        result = base64.b64encode(content).decode("utf-8")
+    return result
+
+
+def get_video_url_from_path(video_path: Optional[str]) -> str:
+    """Convert a video path (local file or URL) to a video URL format for the API.
+    
+    If video_path is None or empty, returns the default URL.
+    If video_path is a local file path, encodes it to base64 data URL.
+    If video_path is a URL, returns it as-is.
+    """
+    if not video_path:
+        # Default video URL
+        return "https://huggingface.co/datasets/raushan-testing-hf/videos-test/resolve/main/sample_demo_1.mp4"
+    
+    # Check if it's a URL (starts with http:// or https://)
+    if video_path.startswith(("http://", "https://")):
+        return video_path
+    
+    # Otherwise, treat it as a local file path
+    if not os.path.exists(video_path):
+        raise FileNotFoundError(f"Video file not found: {video_path}")
+    
+    # Detect video MIME type from file extension
+    video_path_lower = video_path.lower()
+    if video_path_lower.endswith('.mp4'):
+        mime_type = 'video/mp4'
+    elif video_path_lower.endswith('.webm'):
+        mime_type = 'video/webm'
+    elif video_path_lower.endswith('.mov'):
+        mime_type = 'video/quicktime'
+    elif video_path_lower.endswith('.avi'):
+        mime_type = 'video/x-msvideo'
+    elif video_path_lower.endswith('.mkv'):
+        mime_type = 'video/x-matroska'
+    else:
+        # Default to mp4 if extension is unknown
+        mime_type = 'video/mp4'
+    
+    video_base64 = encode_base64_content_from_file(video_path)
+    return f"data:{mime_type};base64,{video_base64}"
 
 
 def get_system_prompt():
@@ -58,8 +107,9 @@ def get_text_query():
     return prompt
 
 
-def get_mixed_modalities_query():
+def get_mixed_modalities_query(video_path: Optional[str] = None):
     question = "What is recited in the audio? What is the content of this image? Why is this video funny?"
+    video_url = get_video_url_from_path(video_path)
     prompt = {
         "role": "user",
         "content": [
@@ -76,7 +126,7 @@ def get_mixed_modalities_query():
             {
                 "type": "video_url",
                 "video_url": {
-                    "url": "https://huggingface.co/datasets/raushan-testing-hf/videos-test/resolve/main/sample_demo_1.mp4"
+                    "url": video_url
                 },
             },
             {
@@ -89,8 +139,9 @@ def get_mixed_modalities_query():
     return prompt
 
 
-def get_use_audio_in_video_query():
+def get_use_audio_in_video_query(video_path: Optional[str] = None):
     question = "Describe the content of the video, then convert what the baby say into text."
+    video_url = get_video_url_from_path(video_path)
 
     prompt = {
         "role": "user",
@@ -98,7 +149,7 @@ def get_use_audio_in_video_query():
             {
                 "type": "video_url",
                 "video_url": {
-                    "url": "https://huggingface.co/datasets/raushan-testing-hf/videos-test/resolve/main/sample_demo_1.mp4",
+                    "url": video_url,
                     "num_frames": 16,
                 },
             },
@@ -179,7 +230,16 @@ def run_multimodal_generation(args) -> None:
         code2wav_sampling_params,
     ]
 
-    prompt = query_map[args.query_type]()
+    # Get video path from args if query type uses video
+    video_path = getattr(args, 'video_path', None)
+    
+    # Get the query function and call it with video_path if applicable
+    query_func = query_map[args.query_type]
+    if args.query_type in ("mixed_modalities", "use_audio_in_video"):
+        prompt = query_func(video_path)
+    else:
+        prompt = query_func()
+    
     extra_body = {
         "sampling_params_list": sampling_params_list  # Optional, it has a default setting in stage_configs of the corresponding model.
     }
@@ -218,6 +278,13 @@ def parse_args():
         default="mixed_modalities",
         choices=query_map.keys(),
         help="Query type.",
+    )
+    parser.add_argument(
+        "--video-path",
+        "-v",
+        type=str,
+        default=None,
+        help="Path to local video file or URL. If not provided and query-type uses video, uses default video URL.",
     )
 
     return parser.parse_args()
