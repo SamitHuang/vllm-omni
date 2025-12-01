@@ -6,7 +6,8 @@ Please refer to [README.md](../../../README.md)
 
 ## Run examples (Qwen3-Omni)
 
-Launch the server
+### Launch the Server
+
 ```bash
 vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091
 ```
@@ -16,17 +17,18 @@ If you have custom stage configs file, launch the server with command below
 vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 --stage-configs-path /path/to/stage_configs_file
 ```
 
+### Send Multi-modal Request
+
 Get into the example folder
 ```bash
 cd examples/online_serving/qwen3_omni
 ```
 
-Send request via python
+####  Send request via python
+
 ```bash
 python openai_chat_completion_client_for_multimodal_generation.py --query-type use_image
 ```
-
-#### Available Options
 
 The Python client supports the following command-line arguments:
 
@@ -51,9 +53,9 @@ The Python client supports the following command-line arguments:
   - If not provided, uses default prompt for the selected query type
   - Example: `--prompt "What are the main activities shown in this video?"`
 
-#### Usage Examples
 
-**Using a local video file with custom prompt:**
+For example, to use a local video file with custom prompt:
+
 ```bash
 python openai_chat_completion_client_for_multimodal_generation.py \
     --query-type use_video \
@@ -61,48 +63,12 @@ python openai_chat_completion_client_for_multimodal_generation.py \
     --prompt "What are the main activities shown in this video?"
 ```
 
-**Using a video URL:**
-```bash
-python openai_chat_completion_client_for_multimodal_generation.py \
-    --query-type use_video \
-    --video-path https://example.com/video.mp4 \
-    --prompt "Describe this video in detail."
-```
+####  Send request via curl
 
-**Using default video with custom prompt:**
-```bash
-python openai_chat_completion_client_for_multimodal_generation.py \
-    --query-type use_video \
-    --prompt "Why is this video interesting?"
-```
-
-**Using image query with local image file:**
-```bash
-python openai_chat_completion_client_for_multimodal_generation.py \
-    --query-type use_image \
-    --image-path /path/to/your/image.jpg \
-    --prompt "Describe the image in detail."
-```
-
-**Using audio query with local audio file:**
-```bash
-python openai_chat_completion_client_for_multimodal_generation.py \
-    --query-type use_audio \
-    --audio-path /path/to/your/audio.wav \
-    --prompt "What is the content of this audio?"
-```
-
-**Using text-only query with custom prompt:**
-```bash
-python openai_chat_completion_client_for_multimodal_generation.py \
-    --query-type text \
-    --prompt "Explain multimodal AI models in simple terms."
-```
-
-Send request via curl
 ```bash
 bash run_curl_multimodal_generation.sh use_image
 ```
+
 
 ### FAQ
 
