@@ -26,6 +26,52 @@ Send request via python
 python openai_chat_completion_client_for_multimodal_generation.py --query-type mixed_modalities
 ```
 
+#### Available Options
+
+The Python client supports the following command-line arguments:
+
+- `--query-type` (or `-q`): Query type (default: `mixed_modalities`)
+  - Options: `mixed_modalities`, `use_audio_in_video`, `multi_audios`, `text`
+- `--video-path` (or `-v`): Path to local video file or URL
+  - If not provided and query-type uses video, uses default video URL
+  - Supports local file paths (automatically encoded to base64) or HTTP/HTTPS URLs
+  - Example: `--video-path /path/to/video.mp4` or `--video-path https://example.com/video.mp4`
+- `--prompt` (or `-p`): Custom text prompt/question
+  - If not provided, uses default prompt for the selected query type
+  - Example: `--prompt "What are the main activities shown in this video?"`
+
+#### Usage Examples
+
+**Using a local video file with custom prompt:**
+```bash
+python openai_chat_completion_client_for_multimodal_generation.py \
+    --query-type mixed_modalities \
+    --video-path /path/to/your/video.mp4 \
+    --prompt "Analyze all the media content and provide a comprehensive summary."
+```
+
+**Using a video URL:**
+```bash
+python openai_chat_completion_client_for_multimodal_generation.py \
+    --query-type use_audio_in_video \
+    --video-path https://example.com/video.mp4 \
+    --prompt "Describe the audio content in this video."
+```
+
+**Using default video with custom prompt:**
+```bash
+python openai_chat_completion_client_for_multimodal_generation.py \
+    --query-type mixed_modalities \
+    --prompt "What is in this video, image, and audio?"
+```
+
+**Using text-only query with custom prompt:**
+```bash
+python openai_chat_completion_client_for_multimodal_generation.py \
+    --query-type text \
+    --prompt "Tell me about multimodal AI models."
+```
+
 Send request via curl
 ```bash
 bash run_curl_multimodal_generation.sh mixed_modalities
