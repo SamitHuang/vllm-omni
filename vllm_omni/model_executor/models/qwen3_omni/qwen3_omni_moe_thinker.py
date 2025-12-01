@@ -755,7 +755,12 @@ class Qwen3OmniMoeThinkerMultiModalProcessor(
         tok_kwargs: Mapping[str, object],
     ) -> BatchFeature:
         mm_data = dict(mm_data)
+        # Check for "audios" first, then fall back to "audio" (data parser uses "audio")
         audios = mm_data.pop("audios", [])
+        if not audios and "audio" in mm_data:
+            audio_data = mm_data.pop("audio")
+            # Convert single item to list if needed
+            audios = [audio_data] if not isinstance(audio_data, list) else audio_data
 
         def pad_to_hop_length(x: np.ndarray, hop_length: int) -> np.ndarray:
             length = x.shape[-1]
