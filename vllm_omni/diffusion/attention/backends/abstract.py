@@ -39,6 +39,11 @@ class AttentionBackend(ABC):
         """Get the list of supported head sizes for this backend."""
         raise NotImplementedError
 
+    @classmethod
+    def supports_head_size(cls, head_size: int) -> bool:
+        supported_head_sizes = cls.get_supported_head_sizes()
+        return (not supported_head_sizes) or head_size in supported_head_sizes
+
 
 @dataclass
 class AttentionMetadata:

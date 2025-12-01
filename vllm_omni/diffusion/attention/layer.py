@@ -21,7 +21,7 @@ class Attention(nn.Module):
         prefix: str = "",
     ):
         super().__init__()
-        self.attn_backend = get_attn_backend()
+        self.attn_backend = get_attn_backend(-1)
         self.attn_impl_cls = self.attn_backend.get_impl_cls()
         self.attention = self.attn_impl_cls(
             num_heads=num_heads,
@@ -39,6 +39,5 @@ class Attention(nn.Module):
         attn_metadata: AttentionMetadata = None,
     ) -> torch.Tensor:
         # shape: (batch_size, seq_len, num_heads, head_size)
-        print("attention shape:", query.shape, key.shape, value.shape)
         attn_output = self.attention.forward(query, key, value, attn_metadata)
         return attn_output
