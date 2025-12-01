@@ -6,7 +6,8 @@ Please refer to [README.md](../../../README.md)
 
 ## Run examples (Qwen2.5-Omni)
 
-Launch the server
+### Launch the Server
+
 ```bash
 vllm serve Qwen/Qwen2.5-Omni-7B --omni --port 8091
 ```
@@ -16,17 +17,18 @@ If you have custom stage configs file, launch the server with command below
 vllm serve Qwen/Qwen2.5-Omni-7B --omni --port 8091 --stage-configs-path /path/to/stage_configs_file
 ```
 
+### Send Multi-modal Request
+
 Get into the example folder
 ```bash
 cd examples/online_serving/qwen2_5_omni
 ```
 
-Send request via python
+####  Send request via python
+
 ```bash
 python openai_chat_completion_client_for_multimodal_generation.py --query-type mixed_modalities
 ```
-
-#### Available Options
 
 The Python client supports the following command-line arguments:
 
@@ -50,17 +52,9 @@ The Python client supports the following command-line arguments:
   - If not provided, uses default prompt for the selected query type
   - Example: `--prompt "What are the main activities shown in this video?"`
 
-#### Usage Examples
 
-**Using a local video file with custom prompt:**
-```bash
-python openai_chat_completion_client_for_multimodal_generation.py \
-    --query-type mixed_modalities \
-    --video-path /path/to/your/video.mp4 \
-    --prompt "Analyze all the media content and provide a comprehensive summary."
-```
+For example, to use mixed modalities with all local files:
 
-**Using mixed modalities with all local files:**
 ```bash
 python openai_chat_completion_client_for_multimodal_generation.py \
     --query-type mixed_modalities \
@@ -70,29 +64,8 @@ python openai_chat_completion_client_for_multimodal_generation.py \
     --prompt "Analyze all the media content and provide a comprehensive summary."
 ```
 
-**Using a video URL:**
-```bash
-python openai_chat_completion_client_for_multimodal_generation.py \
-    --query-type use_audio_in_video \
-    --video-path https://example.com/video.mp4 \
-    --prompt "Describe the audio content in this video."
-```
+####  Send request via curl
 
-**Using default video with custom prompt:**
-```bash
-python openai_chat_completion_client_for_multimodal_generation.py \
-    --query-type mixed_modalities \
-    --prompt "What is in this video, image, and audio?"
-```
-
-**Using text-only query with custom prompt:**
-```bash
-python openai_chat_completion_client_for_multimodal_generation.py \
-    --query-type text \
-    --prompt "Tell me about multimodal AI models."
-```
-
-Send request via curl
 ```bash
 bash run_curl_multimodal_generation.sh mixed_modalities
 ```
@@ -122,18 +95,22 @@ Then open `http://localhost:7861/` on your local browser to interact with the we
 
 ### Options
 
-You can customize its basic launch parameters:
+The gradio demo also supports running with an existing API server and can be customized with the following arguments.
+
 
 ```bash
 python gradio_demo.py \
     --model Qwen/Qwen2.5-Omni-7B \
+    --use-api-server \
+    --api-base http://localhost:8091/v1 \
     --ip 127.0.0.1 \
-    --port 7861 \
-    --stage-configs-path /path/to/stage_configs.yaml
+    --port 7861
 ```
 
-- `--model`: Local model checkpoint to load (default `Qwen/Qwen2.5-Omni-7B`).
-- `--ip`: Host/IP for the Gradio server (default `127.0.0.1`).
-- `--port`: Port for the Gradio server (default `7861`).
-- `--stage-configs-path`: Optional path to custom stage configs YAML.
-- `--share`: Set to expose a temporary public link via Gradio.
+- `--model`: Model name
+- `--use-api-server`: If set, connect to an existing vLLM HTTP API server instead of running AsyncOmni locally.
+- `--api-base`: Base URL for vllm serve (only used when `use-api-server` is set, default: http://localhost:8091/v1)
+- `--ip`: Host/IP for Gradio server (default: 127.0.0.1)
+- `--port`: Port for Gradio server (default: 7861)
+- `--stage-configs-path`: Path to custom stage configs YAML file (optional)
+- `--share`: Share the Gradio demo publicly (creates a public link)
