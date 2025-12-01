@@ -37,6 +37,16 @@ The Python client supports the following command-line arguments:
   - If not provided and query-type is `use_video`, uses default video URL
   - Supports local file paths (automatically encoded to base64) or HTTP/HTTPS URLs
   - Example: `--video-path /path/to/video.mp4` or `--video-path https://example.com/video.mp4`
+- `--image-path` (or `-i`): Path to local image file or URL
+  - If not provided and query-type is `use_image`, uses default image URL
+  - Supports local file paths (automatically encoded to base64) or HTTP/HTTPS URLs
+  - Supports common image formats: JPEG, PNG, GIF, WebP
+  - Example: `--image-path /path/to/image.jpg` or `--image-path https://example.com/image.png`
+- `--audio-path` (or `-a`): Path to local audio file or URL
+  - If not provided and query-type is `use_audio`, uses default audio URL
+  - Supports local file paths (automatically encoded to base64) or HTTP/HTTPS URLs
+  - Supports common audio formats: MP3, WAV, OGG, FLAC, M4A
+  - Example: `--audio-path /path/to/audio.wav` or `--audio-path https://example.com/audio.mp3`
 - `--prompt` (or `-p`): Custom text prompt/question
   - If not provided, uses default prompt for the selected query type
   - Example: `--prompt "What are the main activities shown in this video?"`
@@ -66,11 +76,20 @@ python openai_chat_completion_client_for_multimodal_generation.py \
     --prompt "Why is this video interesting?"
 ```
 
-**Using image query with custom prompt:**
+**Using image query with local image file:**
 ```bash
 python openai_chat_completion_client_for_multimodal_generation.py \
     --query-type use_image \
+    --image-path /path/to/your/image.jpg \
     --prompt "Describe the image in detail."
+```
+
+**Using audio query with local audio file:**
+```bash
+python openai_chat_completion_client_for_multimodal_generation.py \
+    --query-type use_audio \
+    --audio-path /path/to/your/audio.wav \
+    --prompt "What is the content of this audio?"
 ```
 
 **Using text-only query with custom prompt:**

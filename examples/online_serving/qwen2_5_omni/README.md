@@ -36,6 +36,16 @@ The Python client supports the following command-line arguments:
   - If not provided and query-type uses video, uses default video URL
   - Supports local file paths (automatically encoded to base64) or HTTP/HTTPS URLs
   - Example: `--video-path /path/to/video.mp4` or `--video-path https://example.com/video.mp4`
+- `--image-path` (or `-i`): Path to local image file or URL
+  - If not provided and query-type uses image, uses default image URL
+  - Supports local file paths (automatically encoded to base64) or HTTP/HTTPS URLs
+  - Supports common image formats: JPEG, PNG, GIF, WebP
+  - Example: `--image-path /path/to/image.jpg` or `--image-path https://example.com/image.png`
+- `--audio-path` (or `-a`): Path to local audio file or URL
+  - If not provided and query-type uses audio, uses default audio URL
+  - Supports local file paths (automatically encoded to base64) or HTTP/HTTPS URLs
+  - Supports common audio formats: MP3, WAV, OGG, FLAC, M4A
+  - Example: `--audio-path /path/to/audio.wav` or `--audio-path https://example.com/audio.mp3`
 - `--prompt` (or `-p`): Custom text prompt/question
   - If not provided, uses default prompt for the selected query type
   - Example: `--prompt "What are the main activities shown in this video?"`
@@ -47,6 +57,16 @@ The Python client supports the following command-line arguments:
 python openai_chat_completion_client_for_multimodal_generation.py \
     --query-type mixed_modalities \
     --video-path /path/to/your/video.mp4 \
+    --prompt "Analyze all the media content and provide a comprehensive summary."
+```
+
+**Using mixed modalities with all local files:**
+```bash
+python openai_chat_completion_client_for_multimodal_generation.py \
+    --query-type mixed_modalities \
+    --video-path /path/to/your/video.mp4 \
+    --image-path /path/to/your/image.jpg \
+    --audio-path /path/to/your/audio.wav \
     --prompt "Analyze all the media content and provide a comprehensive summary."
 ```
 
