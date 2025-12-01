@@ -92,20 +92,7 @@ python gradio_demo.py  --model Qwen/Qwen2.5-Omni-7B --port 7861
 
 Then open `http://localhost:7861/` on your local browser to interact with the web UI.
 
-
-### Options
-
-The gradio demo also supports running with an existing API server and can be customized with the following arguments.
-
-
-```bash
-python gradio_demo.py \
-    --model Qwen/Qwen2.5-Omni-7B \
-    --ip 127.0.0.1 \
-    --port 7861
-```
-
-Available options:
+The gradio script supports the following arguments:
 
 - `--model`: Model name
 - `--ip`: Host/IP for Gradio server (default: 127.0.0.1)
