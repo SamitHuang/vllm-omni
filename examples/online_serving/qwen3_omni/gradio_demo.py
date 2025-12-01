@@ -264,8 +264,6 @@ async def run_inference_async_omni(
         # Process audio
         audio_data = process_audio_file(audio_file)
         if audio_data is not None:
-            # Data parser can handle single item or list, but processor expects list format
-            # Pass as list to match processor expectations (qwen3_omni_moe_thinker.py:758)
             multi_modal_data["audio"] = [audio_data] if not isinstance(audio_data, list) else audio_data
 
         # Process image
@@ -284,7 +282,6 @@ async def run_inference_async_omni(
                 video_entry = video_frames
             multi_modal_data["video"] = video_entry
             if use_audio_in_video and extracted_audio is not None and "audio" not in multi_modal_data:
-                # Data parser can handle single item or list, but processor expects list format
                 multi_modal_data["audio"] = (
                     [extracted_audio] if not isinstance(extracted_audio, list) else extracted_audio
                 )
