@@ -73,7 +73,7 @@ def get_mixed_modalities_query(
         f"{question}<|im_end|>\n"
         f"<|im_start|>assistant\n"
     )
-    
+
     # Load video
     if video_path:
         if not os.path.exists(video_path):
@@ -81,7 +81,7 @@ def get_mixed_modalities_query(
         video_frames = video_to_ndarrays(video_path, num_frames=num_frames)
     else:
         video_frames = VideoAsset(name="baby_reading", num_frames=num_frames).np_ndarrays
-    
+
     # Load image
     if image_path:
         if not os.path.exists(image_path):
@@ -90,7 +90,7 @@ def get_mixed_modalities_query(
         image_data = convert_image_mode(pil_image, "RGB")
     else:
         image_data = convert_image_mode(ImageAsset("cherry_blossom").pil_image, "RGB")
-    
+
     # Load audio
     if audio_path:
         if not os.path.exists(audio_path):
@@ -99,7 +99,7 @@ def get_mixed_modalities_query(
         audio_data = (audio_signal.astype(np.float32), sr)
     else:
         audio_data = AudioAsset("mary_had_lamb").audio_and_sample_rate
-    
+
     return QueryResult(
         inputs={
             "prompt": prompt,
@@ -123,7 +123,7 @@ def get_use_audio_in_video_query(
         f"{question}<|im_end|>\n"
         f"<|im_start|>assistant\n"
     )
-    
+
     if video_path:
         if not os.path.exists(video_path):
             raise FileNotFoundError(f"Video file not found: {video_path}")
@@ -151,9 +151,7 @@ def get_use_audio_in_video_query(
     )
 
 
-def get_multi_audios_query(
-    audio_path: Optional[str] = None, sampling_rate: int = 16000
-) -> QueryResult:
+def get_multi_audios_query(audio_path: Optional[str] = None, sampling_rate: int = 16000) -> QueryResult:
     question = "Are these two audio clips the same?"
     prompt = (
         f"<|im_start|>system\n{default_system}<|im_end|>\n"
@@ -162,7 +160,7 @@ def get_multi_audios_query(
         f"{question}<|im_end|>\n"
         f"<|im_start|>assistant\n"
     )
-    
+
     if audio_path:
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
@@ -178,7 +176,7 @@ def get_multi_audios_query(
             AudioAsset("winning_call").audio_and_sample_rate,
             AudioAsset("mary_had_lamb").audio_and_sample_rate,
         ]
-    
+
     return QueryResult(
         inputs={
             "prompt": prompt,
@@ -201,7 +199,7 @@ def get_image_query(question: str = None, image_path: Optional[str] = None) -> Q
         f"{question}<|im_end|>\n"
         f"<|im_start|>assistant\n"
     )
-    
+
     if image_path:
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"Image file not found: {image_path}")
@@ -209,7 +207,7 @@ def get_image_query(question: str = None, image_path: Optional[str] = None) -> Q
         image_data = convert_image_mode(pil_image, "RGB")
     else:
         image_data = convert_image_mode(ImageAsset("cherry_blossom").pil_image, "RGB")
-    
+
     return QueryResult(
         inputs={
             "prompt": prompt,
@@ -230,14 +228,14 @@ def get_video_query(question: str = None, video_path: Optional[str] = None, num_
         f"{question}<|im_end|>\n"
         f"<|im_start|>assistant\n"
     )
-    
+
     if video_path:
         if not os.path.exists(video_path):
             raise FileNotFoundError(f"Video file not found: {video_path}")
         video_frames = video_to_ndarrays(video_path, num_frames=num_frames)
     else:
         video_frames = VideoAsset(name="baby_reading", num_frames=num_frames).np_ndarrays
-    
+
     return QueryResult(
         inputs={
             "prompt": prompt,
@@ -258,7 +256,7 @@ def get_audio_query(question: str = None, audio_path: Optional[str] = None, samp
         f"{question}<|im_end|>\n"
         f"<|im_start|>assistant\n"
     )
-    
+
     if audio_path:
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
@@ -266,7 +264,7 @@ def get_audio_query(question: str = None, audio_path: Optional[str] = None, samp
         audio_data = (audio_signal.astype(np.float32), sr)
     else:
         audio_data = AudioAsset("mary_had_lamb").audio_and_sample_rate
-    
+
     return QueryResult(
         inputs={
             "prompt": prompt,
@@ -291,14 +289,14 @@ query_map = {
 
 def main(args):
     model_name = "Qwen/Qwen2.5-Omni-7B"
-    
+
     # Get paths from args
     video_path = getattr(args, "video_path", None)
     image_path = getattr(args, "image_path", None)
     audio_path = getattr(args, "audio_path", None)
     num_frames = getattr(args, "num_frames", 16)
     sampling_rate = getattr(args, "sampling_rate", 16000)
-    
+
     # Get the query function and call it with appropriate parameters
     query_func = query_map[args.query_type]
     if args.query_type == "mixed_modalities":

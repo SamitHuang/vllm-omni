@@ -94,7 +94,7 @@ def get_image_query(question: str = None, image_path: Optional[str] = None) -> Q
         f"{question}<|im_end|>\n"
         f"<|im_start|>assistant\n"
     )
-    
+
     if image_path:
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"Image file not found: {image_path}")
@@ -102,7 +102,7 @@ def get_image_query(question: str = None, image_path: Optional[str] = None) -> Q
         image_data = convert_image_mode(pil_image, "RGB")
     else:
         image_data = convert_image_mode(ImageAsset("cherry_blossom").pil_image, "RGB")
-    
+
     return QueryResult(
         inputs={
             "prompt": prompt,
@@ -123,7 +123,7 @@ def get_audio_query(question: str = None, audio_path: Optional[str] = None, samp
         f"{question}<|im_end|>\n"
         f"<|im_start|>assistant\n"
     )
-    
+
     if audio_path:
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
@@ -131,7 +131,7 @@ def get_audio_query(question: str = None, audio_path: Optional[str] = None, samp
         audio_data = (audio_signal.astype(np.float32), sr)
     else:
         audio_data = AudioAsset("mary_had_lamb").audio_and_sample_rate
-    
+
     return QueryResult(
         inputs={
             "prompt": prompt,
@@ -153,12 +153,12 @@ query_map = {
 
 def main(args):
     model_name = "Qwen/Qwen3-Omni-30B-A3B-Instruct"
-    
+
     # Get paths from args
     video_path = getattr(args, "video_path", None)
     image_path = getattr(args, "image_path", None)
     audio_path = getattr(args, "audio_path", None)
-    
+
     # Get the query function and call it with appropriate parameters
     query_func = query_map[args.query_type]
     if args.query_type == "use_video":
