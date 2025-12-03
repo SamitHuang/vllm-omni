@@ -19,7 +19,7 @@ try:
     _SAGE_ATTN_AVAILABLE = True
 except ImportError:
     logger.warning(
-        "SageAttentionBackend is not available. You may install sageattention by running `pip install sageattention`"
+        "SageAttentionBackend is not available. You may install sageattention by running `uv pip install sageattention==2.2.0 --no-build-isolation`"
     )
     sageattn = None
     _SAGE_ATTN_AVAILABLE = False
