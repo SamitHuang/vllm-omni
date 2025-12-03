@@ -10,6 +10,7 @@ from vllm_omni.diffusion.attention.backends.abstract import (
     AttentionBackend,
 )
 from vllm_omni.diffusion.attention.backends.flash_attn import FlashAttentionBackend
+from vllm_omni.diffusion.attention.backends.sage_attn import SageAttentionBackend
 from vllm_omni.diffusion.attention.backends.sdpa import SDPABackend
 
 logger = init_logger(__name__)
@@ -18,6 +19,7 @@ logger = init_logger(__name__)
 SUPPORTED_BACKENDS = {
     "FLASH_ATTN": FlashAttentionBackend,
     "TORCH_SDPA": SDPABackend,
+    "SAGE_ATTN": SageAttentionBackend,
 }
 
 
