@@ -7,7 +7,7 @@ Example script for image editing with Qwen-Image-Edit.
 Usage:
     python image_edit.py \
         --image input.png \
-        --prompt "Change the rabbit's color to purple, with a flash light background." \
+        --prompt "Let this mascot dance under the moon, surrounded by floating stars and poetic bubbles such as 'Be Kind'" \
         --output output_image_edit.png \
         --num_inference_steps 50 \
         --cfg_scale 4.0
