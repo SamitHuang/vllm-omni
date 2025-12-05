@@ -39,17 +39,17 @@ class DiffusionEngine:
                 requests = self.pre_process_func(requests)
                 preprocess_time = time.time() - preprocess_start_time
                 logger.info(f"Pre-processing completed in {preprocess_time:.4f} seconds")
-            
+
             output = self.add_req_and_wait_for_response(requests)
             if output.error:
                 raise Exception(f"{output.error}")
             logger.info("Generation completed successfully.")
-            
+
             postprocess_start_time = time.time()
             result = self.post_process_func(output.output)
             postprocess_time = time.time() - postprocess_start_time
             logger.info(f"Post-processing completed in {postprocess_time:.4f} seconds")
-            
+
             return result
         except Exception as e:
             logger.error(f"Generation failed: {e}")

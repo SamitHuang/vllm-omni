@@ -58,12 +58,12 @@ def get_qwen_image_edit_pre_process_func(
         """Pre-process requests for QwenImageEditPipeline."""
         for req in requests:
             image = req.pil_image
-            
+
             image_size = image[0].size if isinstance(image, list) else image.size
             calculated_width, calculated_height = calculate_dimensions(1024 * 1024, image_size[0] / image_size[1])
             height = req.height or calculated_height
             width = req.width or calculated_width
-            
+
             # Ensure dimensions are multiples of vae_scale_factor * 2
             multiple_of = vae_scale_factor * 2
             height = height // multiple_of * multiple_of
@@ -74,18 +74,20 @@ def get_qwen_image_edit_pre_process_func(
             req.calculated_width = calculated_width
             req.height = height
             req.width = width
-            
+
             # Preprocess image
-            if image is not None and not (isinstance(image, torch.Tensor) and len(image.shape) > 1 and image.shape[1] == latent_channels):
+            if image is not None and not (
+                isinstance(image, torch.Tensor) and len(image.shape) > 1 and image.shape[1] == latent_channels
+            ):
                 image = image_processor.resize(image, height, width)
                 prompt_image = image
                 image = image_processor.preprocess(image, height, width)
                 image = image.unsqueeze(2)
-                
+
                 # Store preprocessed image and prompt image in request
                 req.preprocessed_image = image
                 req.prompt_image = prompt_image
-        
+
         return requests
 
     return pre_process_func
@@ -119,10 +121,10 @@ def calculate_dimensions(target_area: float, ratio: float):
     """Calculate width and height from target area and aspect ratio."""
     width = math.sqrt(target_area * ratio)
     height = width / ratio
-    
+
     width = round(width / 32) * 32
     height = round(height / 32) * 32
-    
+
     return width, height
 
 
@@ -184,7 +186,11 @@ def retrieve_latents(
 ):
     """Retrieve latents from VAE encoder output."""
     if hasattr(encoder_output, "latent_dist"):
-        return encoder_output.latent_dist.mode() if sample_mode == "argmax" else encoder_output.latent_dist.sample(generator)
+        return (
+            encoder_output.latent_dist.mode()
+            if sample_mode == "argmax"
+            else encoder_output.latent_dist.sample(generator)
+        )
     elif hasattr(encoder_output, "latents"):
         return encoder_output.latents
     else:
@@ -220,7 +226,9 @@ class QwenImageEditPipeline(
         )
         self.transformer = QwenImageTransformer2DModel()
         self.tokenizer = Qwen2Tokenizer.from_pretrained(model, subfolder="tokenizer", local_files_only=local_files_only)
-        self.processor = Qwen2VLProcessor.from_pretrained(model, subfolder="processor", local_files_only=local_files_only)
+        self.processor = Qwen2VLProcessor.from_pretrained(
+            model, subfolder="processor", local_files_only=local_files_only
+        )
 
         self.stage = None
 
@@ -229,10 +237,9 @@ class QwenImageEditPipeline(
         self.image_processor = VaeImageProcessor(vae_scale_factor=self.vae_scale_factor * 2)
         self.tokenizer_max_length = 1024
         # Edit prompt template - different from generation template
-        self.prompt_template_encode = "<|im_start|>system\nDescribe the key features of the input image (color, shape, size, texture, objects, background), then explain how the user's text instruction should alter or modify the image. Generate a new image that meets the user's requirements while maintaining consistency with the original input where appropriate.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>{}<|im_end|>\n<|im_start|>assistant\n"
+        self.prompt_template_encode = "<|im_start|>system\nDescribe the key features of the input image (color, shape, size, texture, objects, background), then explain how the user's text instruction should alter or modify the image. Generate a new image that meets the user's requirements while maintaining consistency with the original input where appropriate.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>{}<|im_end|>\n<|im_start|>assistant\n"  # noqa: E501
         self.prompt_template_encode_start_idx = 64
         self.default_sample_size = 128
-        
 
     def check_inputs(
         self,
@@ -527,7 +534,6 @@ class QwenImageEditPipeline(
 
         return latents, image_latents
 
-
     def prepare_timesteps(self, num_inference_steps, sigmas, image_seq_len):
         sigmas = np.linspace(1.0, 1 / num_inference_steps, num_inference_steps) if sigmas is None else sigmas
         mu = calculate_shift(
@@ -589,12 +595,12 @@ class QwenImageEditPipeline(
             self._current_timestep = t
             # broadcast to batch dimension and place on same device/dtype as latents
             timestep = t.expand(latents.shape[0]).to(device=latents.device, dtype=latents.dtype)
-            
+
             # Concatenate image latents with noise latents if available
             latent_model_input = latents
             if image_latents is not None:
                 latent_model_input = torch.cat([latents, image_latents], dim=1)
-            
+
             noise_pred = self.transformer(
                 hidden_states=latent_model_input,
                 timestep=timestep / 1000,
@@ -607,7 +613,7 @@ class QwenImageEditPipeline(
                 return_dict=False,
             )[0]
             noise_pred = noise_pred[:, : latents.size(1)]
-            
+
             if do_true_cfg:
                 neg_noise_pred = self.transformer(
                     hidden_states=latent_model_input,
@@ -656,7 +662,7 @@ class QwenImageEditPipeline(
         """Forward pass for image editing."""
         prompt = req.prompt if req.prompt is not None else prompt
         negative_prompt = req.negative_prompt if req.negative_prompt is not None else negative_prompt
-        
+
         # Get preprocessed image from request (pre-processing is done in DiffusionEngine)
         if hasattr(req, "preprocessed_image"):
             prompt_image = req.prompt_image
@@ -682,9 +688,6 @@ class QwenImageEditPipeline(
                 image = self.image_processor.preprocess(image, calculated_height, calculated_width)
                 image = image.unsqueeze(2)
 
-        
-        
-        
         num_inference_steps = req.num_inference_steps or num_inference_steps
         generator = req.generator or generator
         true_cfg_scale = req.true_cfg_scale or true_cfg_scale
@@ -737,7 +740,7 @@ class QwenImageEditPipeline(
             num_images_per_prompt=num_images_per_prompt,
             max_sequence_length=max_sequence_length,
         )
-        
+
         if do_true_cfg:
             negative_prompt_embeds, negative_prompt_embeds_mask = self.encode_prompt(
                 prompt=negative_prompt,
@@ -747,7 +750,7 @@ class QwenImageEditPipeline(
                 num_images_per_prompt=num_images_per_prompt,
                 max_sequence_length=max_sequence_length,
             )
-            
+
         num_channels_latents = self.transformer.in_channels // 4
         # random noise latents, and image latents encoded by vae
         latents, image_latents = self.prepare_latents(
@@ -869,4 +872,3 @@ class QwenImageEditPipeline(
         except Exception as e:
             print(f"An error occurred: {e}")
             raise e
-
