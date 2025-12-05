@@ -55,6 +55,13 @@ _DIFFUSION_POST_PROCESS_FUNCS = {
     "ZImagePipeline": "get_post_process_func",
 }
 
+_DIFFUSION_PRE_PROCESS_FUNCS = {
+    # arch: pre_process_func
+    # `pre_process_func` function must be placed in {mod_folder}/{mod_relname}.py,
+    # where mod_folder and mod_relname are  defined and mapped using `_DIFFUSION_MODELS` via the `arch` key
+    "QwenImageEditPipeline": "get_qwen_image_edit_pre_process_func",
+}
+
 
 def get_diffusion_post_process_func(od_config: OmniDiffusionConfig):
     if od_config.model_class_name in _DIFFUSION_POST_PROCESS_FUNCS:
@@ -68,3 +75,16 @@ def get_diffusion_post_process_func(od_config: OmniDiffusionConfig):
         raise ValueError(
             f"Post process function for model class {od_config.model_class_name} not found in diffusion model registry."
         )
+
+
+def get_diffusion_pre_process_func(od_config: OmniDiffusionConfig):
+    if od_config.model_class_name in _DIFFUSION_PRE_PROCESS_FUNCS:
+        mod_folder, mod_relname, _ = _DIFFUSION_MODELS[od_config.model_class_name]
+        func_name = _DIFFUSION_PRE_PROCESS_FUNCS[od_config.model_class_name]
+        module_name = f"vllm_omni.diffusion.models.{mod_folder}.{mod_relname}"
+        module = importlib.import_module(module_name)
+        pre_process_func = getattr(module, func_name)
+        return pre_process_func(od_config)
+    else:
+        # Return None if no pre-processing function is registered (for backward compatibility)
+        return None

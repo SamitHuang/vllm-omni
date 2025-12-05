@@ -35,6 +35,62 @@ from vllm_omni.model_executor.model_loader.weight_utils import (
 logger = logging.getLogger(__name__)
 
 
+def get_qwen_image_edit_pre_process_func(
+    od_config: OmniDiffusionConfig,
+):
+    """Pre-processing function for QwenImageEditPipeline."""
+    model_name = od_config.model
+    if os.path.exists(model_name):
+        model_path = model_name
+    else:
+        model_path = download_weights_from_hf_specific(model_name, None, ["*"])
+    vae_config_path = os.path.join(model_path, "vae/config.json")
+    with open(vae_config_path) as f:
+        vae_config = json.load(f)
+        vae_scale_factor = 2 ** len(vae_config["temporal_downsample"]) if "temporal_downsample" in vae_config else 8
+
+    image_processor = VaeImageProcessor(vae_scale_factor=vae_scale_factor * 2)
+    latent_channels = vae_config.get("z_dim", 16)
+
+    def pre_process_func(
+        requests: list[OmniDiffusionRequest],
+    ):
+        """Pre-process requests for QwenImageEditPipeline."""
+        for req in requests:
+            image = req.pil_image
+            
+            image_size = image[0].size if isinstance(image, list) else image.size
+            calculated_width, calculated_height = calculate_dimensions(1024 * 1024, image_size[0] / image_size[1])
+            height = req.height or calculated_height
+            width = req.width or calculated_width
+            
+            # Ensure dimensions are multiples of vae_scale_factor * 2
+            multiple_of = vae_scale_factor * 2
+            height = height // multiple_of * multiple_of
+            width = width // multiple_of * multiple_of
+
+            # Store calculated dimensions in request
+            req.calculated_height = calculated_height
+            req.calculated_width = calculated_width
+            req.height = height
+            req.width = width
+            
+            # Preprocess image
+            if image is not None and not (isinstance(image, torch.Tensor) and len(image.shape) > 1 and image.shape[1] == latent_channels):
+                image = image_processor.resize(image, height, width)
+                prompt_image = image
+                image = image_processor.preprocess(image, height, width)
+                image = image.unsqueeze(2)
+                
+                # Store preprocessed image and prompt image in request
+                req.preprocessed_image = image
+                req.prompt_image = prompt_image
+        
+        return requests
+
+    return pre_process_func
+
+
 def get_qwen_image_edit_post_process_func(
     od_config: OmniDiffusionConfig,
 ):
@@ -393,8 +449,7 @@ class QwenImageEditPipeline(
 
         return latents
 
-    def _encode_vae_image(self, image: torch.Tensor, generator: Optional[torch.Generator] = None):
-        """Encode image to latents using VAE."""
+    def _encode_vae_image(self, image: torch.Tensor, generator: torch.Generator):
         if isinstance(generator, list):
             image_latents = [
                 retrieve_latents(self.vae.encode(image[i : i + 1]), generator=generator[i], sample_mode="argmax")
@@ -414,7 +469,6 @@ class QwenImageEditPipeline(
             .to(image_latents.device, image_latents.dtype)
         )
         image_latents = (image_latents - latents_mean) / latents_std
-        
 
         return image_latents
 
@@ -602,39 +656,35 @@ class QwenImageEditPipeline(
         """Forward pass for image editing."""
         prompt = req.prompt if req.prompt is not None else prompt
         negative_prompt = req.negative_prompt if req.negative_prompt is not None else negative_prompt
-        # Get image from request if available
-        if hasattr(req, "pil_image") and req.pil_image is not None:
-            image = req.pil_image
-        elif hasattr(req, "image_path") and req.image_path is not None:
-            image = PIL.Image.open(req.image_path).convert("RGB")
+        
+        # Get preprocessed image from request (pre-processing is done in DiffusionEngine)
+        if hasattr(req, "preprocessed_image"):
+            prompt_image = req.prompt_image
+            image = req.preprocessed_image
+            calculated_height = req.calculated_height
+            calculated_width = req.calculated_width
+            height = req.height
+            width = req.width
         else:
-            image = image
+            # fallback to run pre-processing in pipeline (debug only)
+            image_size = image[0].size if isinstance(image, list) else image.size
+            calculated_width, calculated_height, _ = calculate_dimensions(1024 * 1024, image_size[0] / image_size[1])
+            height = height or calculated_height
+            width = width or calculated_width
+
+            multiple_of = self.vae_scale_factor * 2
+            width = width // multiple_of * multiple_of
+            height = height // multiple_of * multiple_of
+
+            if image is not None and not (isinstance(image, torch.Tensor) and image.size(1) == self.latent_channels):
+                image = self.image_processor.resize(image, calculated_height, calculated_width)
+                prompt_image = image
+                image = self.image_processor.preprocess(image, calculated_height, calculated_width)
+                image = image.unsqueeze(2)
+
         
-        # Calculate dimensions from input image if not provided
-        calculated_width = None
-        calculated_height = None
-        if image is not None:
-            image_size = image.size if isinstance(image, PIL.Image.Image) else (image.shape[-1], image.shape[-2])
-            calculated_width, calculated_height = calculate_dimensions(1024 * 1024, image_size[0] / image_size[1])
         
-        height = req.height if req.height is not None else (calculated_height if calculated_height is not None else height)
-        width = req.width if req.width is not None else (calculated_width if calculated_width is not None else width)
         
-        if height is None:
-            height = self.default_sample_size * self.vae_scale_factor
-        if width is None:
-            width = self.default_sample_size * self.vae_scale_factor
-        
-        # Ensure dimensions are multiples of vae_scale_factor * 2
-        multiple_of = self.vae_scale_factor * 2
-        height = height // multiple_of * multiple_of
-        width = width // multiple_of * multiple_of
-        
-        # Round calculated dimensions to multiples if they exist
-        if calculated_height is not None:
-            calculated_height = calculated_height // multiple_of * multiple_of
-        if calculated_width is not None:
-            calculated_width = calculated_width // multiple_of * multiple_of
         num_inference_steps = req.num_inference_steps or num_inference_steps
         generator = req.generator or generator
         true_cfg_scale = req.true_cfg_scale or true_cfg_scale
@@ -673,12 +723,6 @@ class QwenImageEditPipeline(
             batch_size = len(prompt)
         else:
             batch_size = prompt_embeds.shape[0]
-        # Resize and preprocess image to calculated dimensions if provided (match diffusers exactly)
-        if image is not None and not (isinstance(image, torch.Tensor) and image.size(1) == self.latent_channels):
-            image = self.image_processor.resize(image, calculated_height, calculated_width)
-            prompt_image = image
-            image = self.image_processor.preprocess(image, calculated_height, calculated_width)
-            image = image.unsqueeze(2)
 
         has_neg_prompt = negative_prompt is not None or (
             negative_prompt_embeds is not None and negative_prompt_embeds_mask is not None
