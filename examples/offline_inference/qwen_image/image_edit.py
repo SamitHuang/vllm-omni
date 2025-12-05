@@ -47,6 +47,12 @@ def parse_args() -> argparse.Namespace:
         help="Text prompt describing the edit to make to the image.",
     )
     parser.add_argument(
+        "--negative_prompt",
+        type=str,
+        default=" ",
+        required=False,
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=0,
@@ -57,18 +63,6 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=4.0,
         help="True classifier-free guidance scale specific to Qwen-Image-Edit.",
-    )
-    parser.add_argument(
-        "--height",
-        type=int,
-        default=None,
-        help="Height of output image. If not provided, will be calculated from input image.",
-    )
-    parser.add_argument(
-        "--width",
-        type=int,
-        default=None,
-        help="Width of output image. If not provided, will be calculated from input image.",
     )
     parser.add_argument(
         "--output",
@@ -118,25 +112,11 @@ def main():
     )
     print("Pipeline loaded")
 
-    # Calculate output dimensions if not provided
-    if args.height is None or args.width is None:
-        # Use input image dimensions as default
-        width, height = input_image.size
-        # Round to multiples of 32 (common requirement for diffusion models)
-        width = round(width / 32) * 32
-        height = round(height / 32) * 32
-        if args.height is None:
-            args.height = height
-        if args.width is None:
-            args.width = width
-        print(f"Using calculated dimensions: {args.width}x{args.height}")
-
     # Generate edited image
     images = omni.generate(
         prompt=args.prompt,
         pil_image=input_image,
-        height=args.height,
-        width=args.width,
+        negative_prompt=args.negative_prompt,
         generator=generator,
         true_cfg_scale=args.cfg_scale,
         num_inference_steps=args.num_inference_steps,

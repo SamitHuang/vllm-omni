@@ -552,10 +552,7 @@ class QwenImageEditPipeline(
                 attention_kwargs=self.attention_kwargs,
                 return_dict=False,
             )[0]
-            
-            # Slice output to get only the latents part (not image_latents)
-            if image_latents is not None:
-                noise_pred = noise_pred[:, : latents.size(1)]
+            noise_pred = noise_pred[:, : latents.size(1)]
             
             if do_true_cfg:
                 neg_noise_pred = self.transformer(
@@ -569,9 +566,7 @@ class QwenImageEditPipeline(
                     attention_kwargs=self.attention_kwargs,
                     return_dict=False,
                 )[0]
-                # Slice output to get only the latents part
-                if image_latents is not None:
-                    neg_noise_pred = neg_noise_pred[:, : latents.size(1)]
+                neg_noise_pred = neg_noise_pred[:, : latents.size(1)]
                 comb_pred = neg_noise_pred + true_cfg_scale * (noise_pred - neg_noise_pred)
                 cond_norm = torch.norm(noise_pred, dim=-1, keepdim=True)
                 noise_norm = torch.norm(comb_pred, dim=-1, keepdim=True)
@@ -710,7 +705,7 @@ class QwenImageEditPipeline(
             )
             
         num_channels_latents = self.transformer.in_channels // 4
-        # Pass preprocessed image to prepare_latents (it should already be in [B, C, 1, H, W] format)
+        # random noise latents, and image latents encoded by vae
         latents, image_latents = self.prepare_latents(
             image,
             batch_size * num_images_per_prompt,
