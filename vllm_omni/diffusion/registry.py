@@ -63,28 +63,28 @@ _DIFFUSION_PRE_PROCESS_FUNCS = {
 }
 
 
+def _load_process_func(od_config: OmniDiffusionConfig, func_name: str):
+    """Load and return a process function from the appropriate module.
+    """
+    mod_folder, mod_relname, _ = _DIFFUSION_MODELS[od_config.model_class_name]
+    module_name = f"vllm_omni.diffusion.models.{mod_folder}.{mod_relname}"
+    module = importlib.import_module(module_name)
+    func = getattr(module, func_name)
+    return func(od_config)
+
+
 def get_diffusion_post_process_func(od_config: OmniDiffusionConfig):
-    if od_config.model_class_name in _DIFFUSION_POST_PROCESS_FUNCS:
-        mod_folder, mod_relname, _ = _DIFFUSION_MODELS[od_config.model_class_name]
-        func_name = _DIFFUSION_POST_PROCESS_FUNCS[od_config.model_class_name]
-        module_name = f"vllm_omni.diffusion.models.{mod_folder}.{mod_relname}"
-        module = importlib.import_module(module_name)
-        post_process_func = getattr(module, func_name)
-        return post_process_func(od_config)
-    else:
+    if od_config.model_class_name not in _DIFFUSION_POST_PROCESS_FUNCS:
         raise ValueError(
-            f"Post process function for model class {od_config.model_class_name} not found in diffusion model registry."
+            f"Post process function for model class {od_config.model_class_name} "
+            "not found in diffusion model registry."
         )
+    func_name = _DIFFUSION_POST_PROCESS_FUNCS[od_config.model_class_name]
+    return _load_process_func(od_config, func_name)
 
 
 def get_diffusion_pre_process_func(od_config: OmniDiffusionConfig):
-    if od_config.model_class_name in _DIFFUSION_PRE_PROCESS_FUNCS:
-        mod_folder, mod_relname, _ = _DIFFUSION_MODELS[od_config.model_class_name]
-        func_name = _DIFFUSION_PRE_PROCESS_FUNCS[od_config.model_class_name]
-        module_name = f"vllm_omni.diffusion.models.{mod_folder}.{mod_relname}"
-        module = importlib.import_module(module_name)
-        pre_process_func = getattr(module, func_name)
-        return pre_process_func(od_config)
-    else:
-        # Return None if no pre-processing function is registered (for backward compatibility)
-        return None
+    if od_config.model_class_name not in _DIFFUSION_PRE_PROCESS_FUNCS:
+        return None  # Return None if no pre-processing function is registered (for backward compatibility)
+    func_name = _DIFFUSION_PRE_PROCESS_FUNCS[od_config.model_class_name]
+    return _load_process_func(od_config, func_name)
