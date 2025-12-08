@@ -72,8 +72,7 @@ _DIFFUSION_PRE_PROCESS_FUNCS = {
 
 
 def _load_process_func(od_config: OmniDiffusionConfig, func_name: str):
-    """Load and return a process function from the appropriate module.
-    """
+    """Load and return a process function from the appropriate module."""
     mod_folder, mod_relname, _ = _DIFFUSION_MODELS[od_config.model_class_name]
     module_name = f"vllm_omni.diffusion.models.{mod_folder}.{mod_relname}"
     module = importlib.import_module(module_name)
@@ -84,8 +83,7 @@ def _load_process_func(od_config: OmniDiffusionConfig, func_name: str):
 def get_diffusion_post_process_func(od_config: OmniDiffusionConfig):
     if od_config.model_class_name not in _DIFFUSION_POST_PROCESS_FUNCS:
         raise ValueError(
-            f"Post process function for model class {od_config.model_class_name} "
-            "not found in diffusion model registry."
+            f"Post process function for model class {od_config.model_class_name} not found in diffusion model registry."
         )
     func_name = _DIFFUSION_POST_PROCESS_FUNCS[od_config.model_class_name]
     return _load_process_func(od_config, func_name)
