@@ -16,7 +16,7 @@ Please refer to [installation](installation/README.md)
 
 ## Offline Inference
 
-Text-to-image generation quickstart with vllm-omni:
+Text-to-image generation quickstart with vLLM-Omni:
 
 ```python
 from vllm_omni.entrypoints.omni import Omni
