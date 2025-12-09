@@ -167,7 +167,6 @@ class DiffusionCacheConfig:
         
         return result
 
-
 @dataclass
 class OmniDiffusionConfig:
     # Model and path configuration (for convenience)
@@ -346,6 +345,10 @@ class OmniDiffusionConfig:
         elif not isinstance(self.cache_config, DiffusionCacheConfig):
             # If it's neither dict nor DiffusionCacheConfig, convert to empty config
             self.cache_config = DiffusionCacheConfig()
+
+        # Convert cache_config dict to DiffusionCacheConfig dataclass if needed
+        if isinstance(self.cache_config, dict):
+            self.cache_config = DiffusionCacheConfig.from_dict(self.cache_config)
 
     @classmethod
     def from_kwargs(cls, **kwargs: Any) -> "OmniDiffusionConfig":

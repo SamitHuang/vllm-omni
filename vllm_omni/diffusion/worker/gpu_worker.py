@@ -42,6 +42,7 @@ class GPUWorker:
         self.od_config = od_config
         self.pipeline = None
         self.refresh_cache_context = None
+        self._last_num_inference_steps: int | None = None
 
         self.init_device_and_model()
 
@@ -115,9 +116,13 @@ class GPUWorker:
         # TODO: dealing with first req for now
         req = reqs[0]
 
-        # Refresh cache context with the current num_inference_steps if cache-dit is enabled
+        # Refresh cache context for the first request or if num_inference_steps changed
         if self.refresh_cache_context is not None:
-            self.refresh_cache_context(self.pipeline, req.num_inference_steps)
+            request_steps = req.num_inference_steps
+            if (self._last_num_inference_steps is None) or (request_steps != self._last_num_inference_steps):
+                logger.info(f"Refreshing cache context for transformer with num_inference_steps: {request_steps}")
+                self.refresh_cache_context(self.pipeline, request_steps)
+                self._last_num_inference_steps = request_steps
 
         output = self.pipeline.forward(req)
         return output

@@ -34,6 +34,28 @@ except ImportError:
 CUSTOM_DIT_ENABLERS: dict[str, Callable] = {}
 
 
+def _build_db_cache_config(cache_config: Any) -> DBCacheConfig:
+    """Build DBCacheConfig with optional SCM (Step Computation Masking) support.
+
+    Args:
+        cache_config: DiffusionCacheConfig instance.
+
+    Returns:
+        DBCacheConfig instance with SCM support if configured.
+    """
+
+    return DBCacheConfig(
+        # we will refresh the context when gets num_inference_steps in the first inference request
+        num_inference_steps=None,
+        Fn_compute_blocks=cache_config.Fn_compute_blocks,
+        Bn_compute_blocks=cache_config.Bn_compute_blocks,
+        max_warmup_steps=cache_config.max_warmup_steps,
+        max_cached_steps=cache_config.max_cached_steps,
+        max_continuous_cached_steps=cache_config.max_continuous_cached_steps,
+        residual_diff_threshold=cache_config.residual_diff_threshold,
+    )
+
+
 def enable_cache_for_wan22(pipeline: Any, od_config: OmniDiffusionConfig) -> Callable[[int], None]:
     """Enable cache-dit for Wan2.2 dual-transformer architecture.
 
@@ -49,37 +71,18 @@ def enable_cache_for_wan22(pipeline: Any, od_config: OmniDiffusionConfig) -> Cal
     """
     cache_config = od_config.cache_config
 
-    # Parse cache config
-    num_inference_steps = cache_config.get("num_inference_steps")
-
     # Build DBCacheConfig for primary transformer
-    primary_cache_config = DBCacheConfig(
-        num_inference_steps=num_inference_steps,
-        Fn_compute_blocks=cache_config.get("Fn_compute_blocks", 1),
-        Bn_compute_blocks=cache_config.get("Bn_compute_blocks", 0),
-        max_warmup_steps=cache_config.get("max_warmup_steps", 8),
-        max_cached_steps=cache_config.get("max_cached_steps", -1),
-        max_continuous_cached_steps=cache_config.get("max_continuous_cached_steps", -1),
-        residual_diff_threshold=cache_config.get("residual_diff_threshold", 0.08),
-    )
+    primary_cache_config = _build_db_cache_config(cache_config)
 
     # FIXME: secondary cache shares the same config with primary cache for now, but we should support different config for secondary transformer in the future
     # Build DBCacheConfig for secondary transformer (can use same or different config)
-    secondary_cache_config = DBCacheConfig(
-        num_inference_steps=num_inference_steps,
-        Fn_compute_blocks=cache_config.get("Fn_compute_blocks", 1),
-        Bn_compute_blocks=cache_config.get("Bn_compute_blocks", 0),
-        max_warmup_steps=cache_config.get("max_warmup_steps", 8),
-        max_cached_steps=cache_config.get("max_cached_steps", -1),
-        max_continuous_cached_steps=cache_config.get("max_continuous_cached_steps", -1),
-        residual_diff_threshold=cache_config.get("residual_diff_threshold", 0.08),
-    )
+    secondary_cache_config = _build_db_cache_config(cache_config)
 
     # Build calibrator configs if TaylorSeer is enabled
     primary_calibrator = None
     secondary_calibrator = None
-    if cache_config.get("enable_taylorseer", False):
-        taylorseer_order = cache_config.get("taylorseer_order", 1)
+    if cache_config.enable_taylorseer:
+        taylorseer_order = cache_config.taylorseer_order
         primary_calibrator = TaylorSeerCalibratorConfig(taylorseer_order=taylorseer_order)
         secondary_calibrator = TaylorSeerCalibratorConfig(taylorseer_order=taylorseer_order)
         logger.info(f"TaylorSeer enabled with order={taylorseer_order}")
@@ -156,24 +159,32 @@ def enable_cache_for_wan22(pipeline: Any, od_config: OmniDiffusionConfig) -> Cal
         """
         num_high_noise_steps, num_low_noise_steps = _split_inference_steps(num_inference_steps)
         # Refresh context for high-noise transformer
-        if hasattr(cache_dit, "refresh_context"):
-            cache_dit.refresh_context(
-                pipeline.transformer,
-                num_inference_steps=num_high_noise_steps,
-                verbose=True,
-            )
-            # Refresh context for low-noise transformer
-            cache_dit.refresh_context(
-                pipeline.transformer_2,
-                num_inference_steps=num_low_noise_steps,
-                verbose=True,
-            )
-        else:
-            logger.warning(
-                "cache_dit.refresh_context is not available. "
-                "Please update cache-dit to a version that supports refresh_context. "
-                "Continuing with initial configuration."
-            )
+        cache_dit.refresh_context(
+            pipeline.transformer,
+            num_inference_steps=num_high_noise_steps,
+            cache_config=DBCacheConfig().reset(
+                steps_computation_mask=cache_dit.steps_mask(
+                    mask_policy=cache_config.scm_steps_mask_policy,
+                    total_steps=num_high_noise_steps,
+                ),
+                steps_computation_policy=cache_config.scm_steps_policy,
+            ) if cache_config.scm_steps_mask_policy is not None else None,
+            verbose=True,
+        )
+
+        # Refresh context for low-noise transformer
+        cache_dit.refresh_context(
+            pipeline.transformer_2,
+            num_inference_steps=num_low_noise_steps,
+            cache_config=DBCacheConfig().reset(
+                steps_computation_mask=cache_dit.steps_mask(
+                    mask_policy=cache_config.scm_steps_mask_policy,
+                    total_steps=num_low_noise_steps,
+                ),
+                steps_computation_policy=cache_config.scm_steps_policy,
+            ) if cache_config.scm_steps_mask_policy is not None else None,
+            verbose=True,
+        )
 
     return refresh_cache_context
 
@@ -195,7 +206,7 @@ def enable_cache_for_flux(pipeline: Any, od_config: OmniDiffusionConfig) -> Call
 
 
 def enable_cache_for_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> Callable[[int], None]:
-    """Enable cache-dit for single-transformer DiT models.
+    """Enable cache-dit for regular single-transformer DiT models.
 
     Args:
         pipeline: The diffusion pipeline instance.
@@ -204,40 +215,30 @@ def enable_cache_for_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> Calla
     Returns:
         A refresh function that can be called to update cache context with new num_inference_steps.
     """
-    cache_config_dict = od_config.cache_config
-    num_inference_steps = cache_config_dict.get("num_inference_steps", 50)
+    cache_config = od_config.cache_config
 
-    # Build DBCacheConfig
-    cache_config = DBCacheConfig(
-        num_inference_steps=num_inference_steps,
-        Fn_compute_blocks=cache_config_dict.get("Fn_compute_blocks", 1),
-        Bn_compute_blocks=cache_config_dict.get("Bn_compute_blocks", 0),
-        max_warmup_steps=cache_config_dict.get("max_warmup_steps", 8),
-        max_cached_steps=cache_config_dict.get("max_cached_steps", -1),
-        max_continuous_cached_steps=cache_config_dict.get("max_continuous_cached_steps", -1),
-        residual_diff_threshold=cache_config_dict.get("residual_diff_threshold", 0.08),
-    )
+    # Build DBCacheConfig with optional SCM support
+    db_cache_config = _build_db_cache_config(cache_config)
 
     # Build calibrator config if TaylorSeer is enabled
     calibrator_config = None
-    if cache_config_dict.get("enable_taylorseer", False):
-        taylorseer_order = cache_config_dict.get("taylorseer_order", 1)
+    if cache_config.enable_taylorseer:
+        taylorseer_order = cache_config.taylorseer_order
         calibrator_config = TaylorSeerCalibratorConfig(taylorseer_order=taylorseer_order)
         logger.info(f"TaylorSeer enabled with order={taylorseer_order}")
 
     model_class_name = od_config.model_class_name
     logger.info(
         f"Enabling cache-dit on {model_class_name} transformer: "
-        f"Fn={cache_config.Fn_compute_blocks}, "
-        f"Bn={cache_config.Bn_compute_blocks}, "
-        f"W={cache_config.max_warmup_steps}, "
-        f"steps={num_inference_steps}, "
+        f"Fn={db_cache_config.Fn_compute_blocks}, "
+        f"Bn={db_cache_config.Bn_compute_blocks}, "
+        f"W={db_cache_config.max_warmup_steps}, "
     )
 
     # Enable cache-dit on the transformer
     cache_dit.enable_cache(
         pipeline.transformer,
-        cache_config=cache_config,
+        cache_config=db_cache_config,
         calibrator_config=calibrator_config,
     )
 
@@ -248,17 +249,18 @@ def enable_cache_for_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> Calla
             pipeline: The diffusion pipeline instance.
             num_inference_steps: New number of inference steps.
         """
-        if hasattr(cache_dit, "refresh_context"):
-            cache_dit.refresh_context(
-                pipeline.transformer,
-                num_inference_steps=num_inference_steps,
-            )
-        else:
-            logger.warning(
-                "cache_dit.refresh_context is not available. "
-                "Please update cache-dit to a version that supports refresh_context. "
-                "Continuing with initial configuration."
-            )
+        cache_dit.refresh_context(
+            pipeline.transformer,
+            num_inference_steps=num_inference_steps,
+            cache_config=DBCacheConfig().reset(
+                steps_computation_mask=cache_dit.steps_mask(
+                    mask_policy=cache_config.scm_steps_mask_policy,
+                    total_steps=num_inference_steps,
+                ),
+                steps_computation_policy=cache_config.scm_steps_policy,
+            ) if cache_config.scm_steps_mask_policy is not None else None,
+            verbose=True,
+        )
 
     return refresh_cache_context
 
@@ -295,7 +297,6 @@ def may_enable_cache_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> Optio
 
     # Check if this model has a custom cache-dit enabler
     model_class_name = od_config.model_class_name
-    logger.info(f"Detected model class name: {model_class_name}")
     if model_class_name in CUSTOM_DIT_ENABLERS:
         logger.info(f"Using custom cache-dit enabler for model: {model_class_name}")
         refresh_func = CUSTOM_DIT_ENABLERS[model_class_name](pipeline, od_config)

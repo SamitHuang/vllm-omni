@@ -13,7 +13,7 @@ from vllm_omni.utils.platform_utils import detect_device_type, is_npu
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate an image with Qwen-Image.")
-    parser.add_argument("--model", default="Qwen/Qwen-Image", help="Diffusion model name or local path.")
+    parser.add_argument("--model", default="Qwen/Qwen-Image", help="Diffusion model name or local path. Supported models: Qwen/Qwen-Image, Tongyi-MAI/Z-Image-Turbo")
     parser.add_argument("--prompt", default="a cup of coffee on the table", help="Text prompt for image generation.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for deterministic results.")
     parser.add_argument(
@@ -66,13 +66,18 @@ def main():
         vae_use_tiling=vae_use_tiling,
         cache_adapter="cache-dit" if args.enable_cache_dit else None,
         cache_config={
-            "num_inference_steps": args.num_inference_steps,
-            "Fn_compute_blocks": 1,
+            # Scheme: Hybrid DBCache + SCM + TaylorSeer
+            # DBCache
+            "Fn_compute_blocks": 8,
             "Bn_compute_blocks": 0,
-            "max_warmup_steps": 8,
+            "max_warmup_steps": 4,
             "residual_diff_threshold": 0.12,
+            # TaylorSeer
             "enable_taylorseer": True,
             "taylorseer_order": 1,
+            # SCM
+            "scm_steps_mask_policy": "fast",
+            "scm_steps_policy": "dynamic",
         },
     )
     
