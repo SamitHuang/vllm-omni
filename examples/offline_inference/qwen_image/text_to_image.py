@@ -13,7 +13,11 @@ from vllm_omni.utils.platform_utils import detect_device_type, is_npu
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate an image with Qwen-Image.")
-    parser.add_argument("--model", default="Qwen/Qwen-Image", help="Diffusion model name or local path. Supported models: Qwen/Qwen-Image, Tongyi-MAI/Z-Image-Turbo")
+    parser.add_argument(
+        "--model",
+        default="Qwen/Qwen-Image",
+        help="Diffusion model name or local path. Supported models: Qwen/Qwen-Image, Tongyi-MAI/Z-Image-Turbo",
+    )
     parser.add_argument("--prompt", default="a cup of coffee on the table", help="Text prompt for image generation.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for deterministic results.")
     parser.add_argument(
@@ -80,10 +84,10 @@ def main():
             "scm_steps_policy": "dynamic",
         },
     )
-    
+
     # Time profiling for generation
     print(f"Number of inference steps: {args.num_inference_steps}")
-    
+
     generation_start = time.perf_counter()
     images = omni.generate(
         args.prompt,
@@ -97,7 +101,7 @@ def main():
     )
     generation_end = time.perf_counter()
     generation_time = generation_end - generation_start
-    
+
     # Print profiling results
     print(f"Total generation time: {generation_time:.4f} seconds ({generation_time * 1000:.2f} ms)")
 

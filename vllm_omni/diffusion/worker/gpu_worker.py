@@ -83,6 +83,7 @@ class GPUWorker:
         if self.od_config.cache_adapter == "cache-dit":
             # Avoid heavy import of cache-dit at the beginning
             from vllm_omni.diffusion.cache.cache_dit_adapter import may_enable_cache_dit
+
             self.refresh_cache_context = may_enable_cache_dit(self.pipeline, self.od_config)
 
         logger.info(

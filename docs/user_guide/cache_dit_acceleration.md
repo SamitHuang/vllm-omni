@@ -89,7 +89,7 @@ omni = Omni(
         "scm_steps_policy": "dynamic",
     },
 )
- 
+
 ```
 
 ## Acceleration Methods
@@ -318,7 +318,7 @@ Different models may benefit from different configurations:
 ### 4. Combining Methods
 - **DBCache + TaylorSeer**: Good balance, works well for most cases
 - **DBCache + SCM**: Can try when quality can be slightly compromised
-- **All three**: Maximum acceleration if the parameters are carefully tuned 
+- **All three**: Maximum acceleration if the parameters are carefully tuned
 
 ## Additional Resources
 

@@ -7,10 +7,8 @@ This module provides functions to enable cache-dit acceleration on diffusion
 pipelines in vllm-omni, supporting both single and dual-transformer architectures.
 """
 
-import logging
 from typing import Any, Callable, Optional
 
-import torch
 from vllm.logger import init_logger
 
 from vllm_omni.diffusion.data import OmniDiffusionConfig
@@ -74,7 +72,8 @@ def enable_cache_for_wan22(pipeline: Any, od_config: OmniDiffusionConfig) -> Cal
     # Build DBCacheConfig for primary transformer
     primary_cache_config = _build_db_cache_config(cache_config)
 
-    # FIXME: secondary cache shares the same config with primary cache for now, but we should support different config for secondary transformer in the future
+    # FIXME: secondary cache shares the same config with primary cache for now,
+    # but we should support different config for secondary transformer in the future
     # Build DBCacheConfig for secondary transformer (can use same or different config)
     secondary_cache_config = _build_db_cache_config(cache_config)
 
@@ -168,7 +167,9 @@ def enable_cache_for_wan22(pipeline: Any, od_config: OmniDiffusionConfig) -> Cal
                     total_steps=num_high_noise_steps,
                 ),
                 steps_computation_policy=cache_config.scm_steps_policy,
-            ) if cache_config.scm_steps_mask_policy is not None else None,
+            )
+            if cache_config.scm_steps_mask_policy is not None
+            else None,
             verbose=True,
         )
 
@@ -182,7 +183,9 @@ def enable_cache_for_wan22(pipeline: Any, od_config: OmniDiffusionConfig) -> Cal
                     total_steps=num_low_noise_steps,
                 ),
                 steps_computation_policy=cache_config.scm_steps_policy,
-            ) if cache_config.scm_steps_mask_policy is not None else None,
+            )
+            if cache_config.scm_steps_mask_policy is not None
+            else None,
             verbose=True,
         )
 
@@ -258,7 +261,9 @@ def enable_cache_for_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> Calla
                     total_steps=num_inference_steps,
                 ),
                 steps_computation_policy=cache_config.scm_steps_policy,
-            ) if cache_config.scm_steps_mask_policy is not None else None,
+            )
+            if cache_config.scm_steps_mask_policy is not None
+            else None,
             verbose=True,
         )
 
@@ -266,10 +271,12 @@ def enable_cache_for_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> Calla
 
 
 # Register custom cache-dit enablers after function definitions
-CUSTOM_DIT_ENABLERS.update({
-    "WanPipeline": enable_cache_for_wan22,
-    "FluxPipeline": enable_cache_for_flux,
-})
+CUSTOM_DIT_ENABLERS.update(
+    {
+        "WanPipeline": enable_cache_for_wan22,
+        "FluxPipeline": enable_cache_for_flux,
+    }
+)
 
 
 def may_enable_cache_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> Optional[Callable[[int], None]]:
@@ -306,4 +313,3 @@ def may_enable_cache_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> Optio
     refresh_func = enable_cache_for_dit(pipeline, od_config)
 
     return refresh_func
-
