@@ -8,7 +8,7 @@ pipelines in vllm-omni, supporting both single and dual-transformer architecture
 """
 
 import logging
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 import torch
 from vllm.logger import init_logger
@@ -28,10 +28,12 @@ except ImportError:
 
 
 # Special forward patterns for dual-transformer models
+# Maps model class names to their cache-dit enablement functions
+# Will be populated after function definitions
 SPECIAL_FORWARD_PATTERNS: dict[str, Callable] = {}
 
 
-def enable_cache_dit_for_wan22(pipeline: Any, od_config: OmniDiffusionConfig) -> None:
+def enable_cache_dit_for_wan22(pipeline: Any, od_config: OmniDiffusionConfig) -> Callable[[int], None]:
     """Enable cache-dit for Wan2.2 dual-transformer architecture.
 
     Wan2.2 uses two transformers (transformer and transformer_2) that need
@@ -40,8 +42,10 @@ def enable_cache_dit_for_wan22(pipeline: Any, od_config: OmniDiffusionConfig) ->
     Args:
         pipeline: The Wan2.2 pipeline instance.
         od_config: OmniDiffusionConfig with cache configuration.
-    """
 
+    Returns:
+        A refresh function that can be called to update cache context with new num_inference_steps.
+    """
     cache_config = od_config.cache_config
 
     # Parse cache config
@@ -111,8 +115,68 @@ def enable_cache_dit_for_wan22(pipeline: Any, od_config: OmniDiffusionConfig) ->
         ),
     )
 
+    # from https://github.com/vipshop/cache-dit/pull/542
+    def _split_inference_steps(num_inference_steps: int) -> tuple[int, int]:
+        """Split inference steps into high-noise and low-noise steps for Wan2.2.
 
-def enable_cache_dit_for_flux(pipeline: Any, od_config: OmniDiffusionConfig) -> None:
+        This is an internal helper function specific to Wan2.2's dual-transformer
+        architecture that uses boundary_ratio to determine the split point.
+
+        Args:
+            num_inference_steps: Total number of inference steps.
+
+        Returns:
+            A tuple of (num_high_noise_steps, num_low_noise_steps).
+        """
+        if pipeline.config.boundary_ratio is not None:
+            boundary_timestep = pipeline.config.boundary_ratio * pipeline.scheduler.config.num_train_timesteps
+        else:
+            boundary_timestep = None
+
+        # Set timesteps to calculate the split
+        device = next(pipeline.transformer.parameters()).device
+        pipeline.scheduler.set_timesteps(num_inference_steps, device=device)
+
+        timesteps = pipeline.scheduler.timesteps
+        num_high_noise_steps = 0  # high-noise steps for transformer
+        for t in timesteps:
+            if boundary_timestep is None or t >= boundary_timestep:
+                num_high_noise_steps += 1
+        # low-noise steps for transformer_2
+        num_low_noise_steps = num_inference_steps - num_high_noise_steps
+        return num_high_noise_steps, num_low_noise_steps
+
+    def refresh_cache_context(num_inference_steps: int) -> None:
+        """Refresh cache context for both transformers with new num_inference_steps.
+
+        Args:
+            num_inference_steps: New number of inference steps.
+        """
+        num_high_noise_steps, num_low_noise_steps = _split_inference_steps(num_inference_steps)
+        # Refresh context for high-noise transformer
+        if hasattr(cache_dit, "refresh_context"):
+            cache_dit.refresh_context(
+                pipeline.transformer,
+                num_inference_steps=num_high_noise_steps,
+                verbose=True,
+            )
+            # Refresh context for low-noise transformer
+            cache_dit.refresh_context(
+                pipeline.transformer_2,
+                num_inference_steps=num_low_noise_steps,
+                verbose=True,
+            )
+        else:
+            logger.warning(
+                "cache_dit.refresh_context is not available. "
+                "Please update cache-dit to a version that supports refresh_context. "
+                "Continuing with initial configuration."
+            )
+
+    return refresh_cache_context
+
+
+def enable_cache_dit_for_flux(pipeline: Any, od_config: OmniDiffusionConfig) -> Callable[[int], None]:
     """Enable cache-dit for Flux dual-transformer architecture.
 
     Flux uses two transformers (transformer and transformer_2) that need
@@ -121,43 +185,25 @@ def enable_cache_dit_for_flux(pipeline: Any, od_config: OmniDiffusionConfig) -> 
     Args:
         pipeline: The Flux pipeline instance.
         od_config: OmniDiffusionConfig with cache configuration.
+
+    Returns:
+        A refresh function that can be called to update cache context with new num_inference_steps.
     """
-
     raise NotImplementedError("cache-dit is not implemented for Flux pipeline.")
-    
-# Register special forward patterns
-def may_enable_cache_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> None:
-    """Enable cache-dit on the pipeline if configured.
 
-    This function checks if cache-dit is enabled in the config and applies it
-    to the appropriate transformer(s) in the pipeline. It handles both
-    single-transformer and dual-transformer architectures.
 
-    It also stores the cached num_inference_steps on the pipeline for later
-    validation during inference.
+def enable_cache_dit_for_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> Callable[[int], None]:
+    """Enable cache-dit for single-transformer DiT models.
 
     Args:
         pipeline: The diffusion pipeline instance.
         od_config: OmniDiffusionConfig with cache configuration.
 
-    Raises:
-        ValueError: If cache_config is missing required parameters.
-        ImportError: If cache-dit is not installed.
+    Returns:
+        A refresh function that can be called to update cache context with new num_inference_steps.
     """
     cache_config_dict = od_config.cache_config
-
     num_inference_steps = cache_config_dict.get("num_inference_steps", 50)
-
-    # Store the cached num_inference_steps on the pipeline for later validation
-    # This allows us to warn if num_inference_steps changes during inference
-    pipeline._cache_dit_num_inference_steps = num_inference_steps
-
-    # Check if this is a special dual-transformer model
-    model_class_name = od_config.model_class_name
-    if model_class_name in SPECIAL_FORWARD_PATTERNS:
-        logger.info(f"Detected special dual-transformer model: {model_class_name}")
-        SPECIAL_FORWARD_PATTERNS[model_class_name](pipeline, od_config)
-        return
 
     # Build DBCacheConfig
     cache_config = DBCacheConfig(
@@ -177,6 +223,7 @@ def may_enable_cache_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> None:
         calibrator_config = TaylorSeerCalibratorConfig(taylorseer_order=taylorseer_order)
         logger.info(f"TaylorSeer enabled with order={taylorseer_order}")
 
+    model_class_name = od_config.model_class_name
     logger.info(
         f"Enabling cache-dit on {model_class_name} transformer: "
         f"Fn={cache_config.Fn_compute_blocks}, "
@@ -191,4 +238,71 @@ def may_enable_cache_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> None:
         cache_config=cache_config,
         calibrator_config=calibrator_config,
     )
+
+    def refresh_cache_context(num_inference_steps: int) -> None:
+        """Refresh cache context for the transformer with new num_inference_steps.
+
+        Args:
+            num_inference_steps: New number of inference steps.
+        """
+        if hasattr(cache_dit, "refresh_context"):
+            cache_dit.refresh_context(
+                pipeline.transformer,
+                num_inference_steps=num_inference_steps,
+            )
+        else:
+            logger.warning(
+                "cache_dit.refresh_context is not available. "
+                "Please update cache-dit to a version that supports refresh_context. "
+                "Continuing with initial configuration."
+            )
+
+    return refresh_cache_context
+
+
+# Register special forward patterns after function definitions
+SPECIAL_FORWARD_PATTERNS.update({
+    "WanPipeline": enable_cache_dit_for_wan22,
+    "FluxPipeline": enable_cache_dit_for_flux,
+})
+
+
+# Register special forward patterns
+def may_enable_cache_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> Optional[Callable[[int], None]]:
+    """Enable cache-dit on the pipeline if configured.
+
+    This function checks if cache-dit is enabled in the config and applies it
+    to the appropriate transformer(s) in the pipeline. It handles both
+    single-transformer and dual-transformer architectures.
+
+    It also stores the cached num_inference_steps on the pipeline for later
+    validation during inference and returns a refresh function that can be
+    called to update the cache context with new num_inference_steps.
+
+    Args:
+        pipeline: The diffusion pipeline instance.
+        od_config: OmniDiffusionConfig with cache configuration.
+
+    Returns:
+        A refresh function that can be called to update cache context with new num_inference_steps,
+        or None if cache-dit is not enabled.
+    """
+    if not CACHE_DIT_AVAILABLE:
+        logger.warning("cache-dit is not available, skipping cache-dit setup.")
+        return None
+
+    cache_config_dict = od_config.cache_config
+    num_inference_steps = cache_config_dict.get("num_inference_steps", 50)
+
+    # Check if this is a special dual-transformer model
+    model_class_name = od_config.model_class_name
+    if model_class_name in SPECIAL_FORWARD_PATTERNS:
+        logger.info(f"Detected special dual-transformer model: {model_class_name}")
+        refresh_func = SPECIAL_FORWARD_PATTERNS[model_class_name](pipeline, od_config)
+        return refresh_func
+
+    # For regular single-transformer models
+    refresh_func = enable_cache_dit_for_dit(pipeline, od_config)
+
+    return refresh_func
 

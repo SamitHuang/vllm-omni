@@ -41,6 +41,7 @@ class GPUWorker:
         self.rank = rank
         self.od_config = od_config
         self.pipeline = None
+        self.refresh_cache_context = None
 
         self.init_device_and_model()
 
@@ -77,10 +78,11 @@ class GPUWorker:
             )
         time_after_load = time.perf_counter()
 
-        # Enable cache-dit if configured
+        # Enable cache-dit if configured. It must be called after pipeline is loaded.
         if self.od_config.cache_adapter == "cache-dit":
+            # Avoid heavy import of cache-dit at the beginning
             from vllm_omni.diffusion.cache.cache_dit_adapter import may_enable_cache_dit
-            may_enable_cache_dit(self.pipeline, self.od_config)
+            self.refresh_cache_context = may_enable_cache_dit(self.pipeline, self.od_config)
 
         logger.info(
             "Model loading took %.4f GiB and %.6f seconds",
@@ -113,21 +115,9 @@ class GPUWorker:
         # TODO: dealing with first req for now
         req = reqs[0]
 
-        # Check if cache-dit is enabled and warn if num_inference_steps changed
-        if hasattr(self.pipeline, "_cache_dit_num_inference_steps"):
-            cached_steps = self.pipeline._cache_dit_num_inference_steps
-            request_steps = req.num_inference_steps or 50  # Default from OmniDiffusionRequest
-            if request_steps != cached_steps:
-                logger.warning(
-                    "num_inference_steps changed from %d to %d after cache-dit was enabled. "
-                    "Continuing with initial configuration (num_inference_steps=%d). "
-                    "This may affect cache-dit performance. "
-                    "To use a different num_inference_steps, please recreate the pipeline with "
-                    "the desired value in cache_config.",
-                    cached_steps,
-                    request_steps,
-                    cached_steps,
-                )
+        # Refresh cache context with the current num_inference_steps if cache-dit is enabled
+        if self.refresh_cache_context is not None:
+            self.refresh_cache_context(req.num_inference_steps)
 
         output = self.pipeline.forward(req)
         return output
