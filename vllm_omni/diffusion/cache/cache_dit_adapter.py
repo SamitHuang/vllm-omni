@@ -27,13 +27,14 @@ except ImportError:
     logger.warning("cache-dit is not installed. Cache-dit acceleration will not be available.")
 
 
-# Special forward patterns for dual-transformer models
+# Registry of custom cache-dit enablers for specific models
 # Maps model class names to their cache-dit enablement functions
+# Models in this registry require custom handling (e.g., dual-transformer architectures)
 # Will be populated after function definitions
-SPECIAL_FORWARD_PATTERNS: dict[str, Callable] = {}
+CUSTOM_DIT_ENABLERS: dict[str, Callable] = {}
 
 
-def enable_cache_dit_for_wan22(pipeline: Any, od_config: OmniDiffusionConfig) -> Callable[[int], None]:
+def enable_cache_for_wan22(pipeline: Any, od_config: OmniDiffusionConfig) -> Callable[[int], None]:
     """Enable cache-dit for Wan2.2 dual-transformer architecture.
 
     Wan2.2 uses two transformers (transformer and transformer_2) that need
@@ -146,10 +147,11 @@ def enable_cache_dit_for_wan22(pipeline: Any, od_config: OmniDiffusionConfig) ->
         num_low_noise_steps = num_inference_steps - num_high_noise_steps
         return num_high_noise_steps, num_low_noise_steps
 
-    def refresh_cache_context(num_inference_steps: int) -> None:
+    def refresh_cache_context(pipeline: Any, num_inference_steps: int) -> None:
         """Refresh cache context for both transformers with new num_inference_steps.
 
         Args:
+            pipeline: The Wan2.2 pipeline instance.
             num_inference_steps: New number of inference steps.
         """
         num_high_noise_steps, num_low_noise_steps = _split_inference_steps(num_inference_steps)
@@ -176,7 +178,7 @@ def enable_cache_dit_for_wan22(pipeline: Any, od_config: OmniDiffusionConfig) ->
     return refresh_cache_context
 
 
-def enable_cache_dit_for_flux(pipeline: Any, od_config: OmniDiffusionConfig) -> Callable[[int], None]:
+def enable_cache_for_flux(pipeline: Any, od_config: OmniDiffusionConfig) -> Callable[[int], None]:
     """Enable cache-dit for Flux dual-transformer architecture.
 
     Flux uses two transformers (transformer and transformer_2) that need
@@ -192,7 +194,7 @@ def enable_cache_dit_for_flux(pipeline: Any, od_config: OmniDiffusionConfig) -> 
     raise NotImplementedError("cache-dit is not implemented for Flux pipeline.")
 
 
-def enable_cache_dit_for_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> Callable[[int], None]:
+def enable_cache_for_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> Callable[[int], None]:
     """Enable cache-dit for single-transformer DiT models.
 
     Args:
@@ -239,10 +241,11 @@ def enable_cache_dit_for_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> C
         calibrator_config=calibrator_config,
     )
 
-    def refresh_cache_context(num_inference_steps: int) -> None:
+    def refresh_cache_context(pipeline: Any, num_inference_steps: int) -> None:
         """Refresh cache context for the transformer with new num_inference_steps.
 
         Args:
+            pipeline: The diffusion pipeline instance.
             num_inference_steps: New number of inference steps.
         """
         if hasattr(cache_dit, "refresh_context"):
@@ -260,14 +263,13 @@ def enable_cache_dit_for_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> C
     return refresh_cache_context
 
 
-# Register special forward patterns after function definitions
-SPECIAL_FORWARD_PATTERNS.update({
-    "WanPipeline": enable_cache_dit_for_wan22,
-    "FluxPipeline": enable_cache_dit_for_flux,
+# Register custom cache-dit enablers after function definitions
+CUSTOM_DIT_ENABLERS.update({
+    "WanPipeline": enable_cache_for_wan22,
+    "FluxPipeline": enable_cache_for_flux,
 })
 
 
-# Register special forward patterns
 def may_enable_cache_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> Optional[Callable[[int], None]]:
     """Enable cache-dit on the pipeline if configured.
 
@@ -291,18 +293,16 @@ def may_enable_cache_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> Optio
         logger.warning("cache-dit is not available, skipping cache-dit setup.")
         return None
 
-    cache_config_dict = od_config.cache_config
-    num_inference_steps = cache_config_dict.get("num_inference_steps", 50)
-
-    # Check if this is a special dual-transformer model
+    # Check if this model has a custom cache-dit enabler
     model_class_name = od_config.model_class_name
-    if model_class_name in SPECIAL_FORWARD_PATTERNS:
-        logger.info(f"Detected special dual-transformer model: {model_class_name}")
-        refresh_func = SPECIAL_FORWARD_PATTERNS[model_class_name](pipeline, od_config)
+    logger.info(f"Detected model class name: {model_class_name}")
+    if model_class_name in CUSTOM_DIT_ENABLERS:
+        logger.info(f"Using custom cache-dit enabler for model: {model_class_name}")
+        refresh_func = CUSTOM_DIT_ENABLERS[model_class_name](pipeline, od_config)
         return refresh_func
 
     # For regular single-transformer models
-    refresh_func = enable_cache_dit_for_dit(pipeline, od_config)
+    refresh_func = enable_cache_for_dit(pipeline, od_config)
 
     return refresh_func
 

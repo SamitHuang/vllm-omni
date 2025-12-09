@@ -117,7 +117,7 @@ class GPUWorker:
 
         # Refresh cache context with the current num_inference_steps if cache-dit is enabled
         if self.refresh_cache_context is not None:
-            self.refresh_cache_context(req.num_inference_steps)
+            self.refresh_cache_context(self.pipeline, req.num_inference_steps)
 
         output = self.pipeline.forward(req)
         return output
