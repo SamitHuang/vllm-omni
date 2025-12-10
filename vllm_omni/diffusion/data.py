@@ -43,6 +43,7 @@ class TransformerConfig:
 
 @dataclass
 class DiffusionCacheConfig:
+<<<<<<< HEAD
     """
     Configuration for cache adapters (TeaCache, cache-dit, etc.).
     
@@ -83,6 +84,42 @@ class DiffusionCacheConfig:
     # Default: Enable TaylorSeer for better forecasting
     enable_taylorseer: bool = True
     # Default: 1st order TaylorSeer polynomial
+=======
+    """Configuration for diffusion model cache acceleration.
+
+    This dataclass can be initialized from a dictionary for backward compatibility.
+
+    Default values are optimized for vllm-omni use cases:
+    - Fewer warmup steps (4 vs 8) to support few-step distilled models (e.g., Z-Image with 8 steps)
+    - Higher residual threshold (0.24 vs 0.08) for more aggressive caching, balanced by max_continuous_cached_steps limit
+    - Fewer compute blocks (1 vs 8) for better performance on single-transformer models
+    - TaylorSeer disabled by default as it's not suitable for few-step distilled models
+    """
+
+    # Use 1 as default instead of cache-dit's 8, optimized for single-transformer models
+    # This provides better performance while maintaining quality for most use cases
+    Fn_compute_blocks: int = 1
+    Bn_compute_blocks: int = 0
+    # Use 4 as default warmup steps instead of 8 in cache-dit, making DBCache work
+    # for few-step distilled models (e.g., Z-Image with 8 steps)
+    max_warmup_steps: int = 4
+    max_cached_steps: int = -1
+    # Limit consecutive cached steps to 3 to prevent precision degradation
+    # This allows us to use a higher residual_diff_threshold for more aggressive caching
+    max_continuous_cached_steps: int = 3
+    # Use a relatively higher residual diff threshold (0.24) as default to allow more
+    # aggressive caching. This is safe because we have max_continuous_cached_steps limit.
+    # Without this limit, a lower threshold like 0.12 would be needed.
+    residual_diff_threshold: float = 0.24
+    # Used by cache-dit for scm mask generation. If this value changes during inference,
+    # we will re-generate the scm mask and refresh the cache context.
+    num_inference_steps: int | None = None
+    # TaylorSeer is not suitable for few-step distilled models, so we disable it by default.
+    # References:
+    # - From Reusing to Forecasting: Accelerating Diffusion Models with TaylorSeers
+    # - FoCa: Forecast then Calibrate: Feature Caching as ODE for Efficient Diffusion Transformers
+    enable_taylorseer: bool = False
+>>>>>>> 7b78b5c (update cache-dit default param values)
     taylorseer_order: int = 1
     # Default: "fast" SCM mask policy for good speed/quality balance
     scm_steps_mask_policy: str = "fast"
