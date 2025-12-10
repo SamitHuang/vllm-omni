@@ -322,6 +322,6 @@ Different models may benefit from different configurations:
 
 ## Additional Resources
 
-- [Cache-dit User Guide](https://github.com/vipshop/cache-dit/blob/main/docs/User_Guide.md)
-- [Cache-dit Benchmark](https://github.com/vipshop/cache-dit/tree/main/bench)
+- [Cache-DiT User Guide](https://github.com/vipshop/cache-dit/blob/main/docs/User_Guide.md)
+- [Cache-DiT Benchmark](https://github.com/vipshop/cache-dit/tree/main/bench)
 - [DBCache Technical Details](https://github.com/vipshop/cache-dit/blob/main/docs/DBCache.md)
