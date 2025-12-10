@@ -149,7 +149,7 @@ def enable_cache_for_wan22(pipeline: Any, od_config: OmniDiffusionConfig) -> Cal
         num_low_noise_steps = num_inference_steps - num_high_noise_steps
         return num_high_noise_steps, num_low_noise_steps
 
-    def refresh_cache_context(pipeline: Any, num_inference_steps: int) -> None:
+    def refresh_cache_context(pipeline: Any, num_inference_steps: int, verbose: bool = True) -> None:
         """Refresh cache context for both transformers with new num_inference_steps.
 
         Args:
@@ -158,36 +158,36 @@ def enable_cache_for_wan22(pipeline: Any, od_config: OmniDiffusionConfig) -> Cal
         """
         num_high_noise_steps, num_low_noise_steps = _split_inference_steps(num_inference_steps)
         # Refresh context for high-noise transformer
-        cache_dit.refresh_context(
-            pipeline.transformer,
-            num_inference_steps=num_high_noise_steps,
-            cache_config=DBCacheConfig().reset(
-                steps_computation_mask=cache_dit.steps_mask(
-                    mask_policy=cache_config.scm_steps_mask_policy,
-                    total_steps=num_high_noise_steps,
+        if cache_config.scm_steps_mask_policy is None:
+            cache_dit.refresh_context(pipeline.transformer, num_inference_steps=num_high_noise_steps, verbose=verbose)
+        else:
+            cache_dit.refresh_context(
+                pipeline.transformer,
+                cache_config=DBCacheConfig().reset(
+                    num_inference_steps=num_high_noise_steps,
+                    steps_computation_mask=cache_dit.steps_mask(
+                        mask_policy=cache_config.scm_steps_mask_policy, total_steps=num_high_noise_steps
+                    ),
+                    steps_computation_policy=cache_config.scm_steps_policy,
                 ),
-                steps_computation_policy=cache_config.scm_steps_policy,
+                verbose=verbose,
             )
-            if cache_config.scm_steps_mask_policy is not None
-            else None,
-            verbose=True,
-        )
 
         # Refresh context for low-noise transformer
-        cache_dit.refresh_context(
-            pipeline.transformer_2,
-            num_inference_steps=num_low_noise_steps,
-            cache_config=DBCacheConfig().reset(
-                steps_computation_mask=cache_dit.steps_mask(
-                    mask_policy=cache_config.scm_steps_mask_policy,
-                    total_steps=num_low_noise_steps,
+        if cache_config.scm_steps_mask_policy is None:
+            cache_dit.refresh_context(pipeline.transformer_2, num_inference_steps=num_low_noise_steps, verbose=verbose)
+        else:
+            cache_dit.refresh_context(
+                pipeline.transformer_2,
+                cache_config=DBCacheConfig().reset(
+                    num_inference_steps=num_low_noise_steps,
+                    steps_computation_mask=cache_dit.steps_mask(
+                        mask_policy=cache_config.scm_steps_mask_policy, total_steps=num_low_noise_steps
+                    ),
+                    steps_computation_policy=cache_config.scm_steps_policy,
                 ),
-                steps_computation_policy=cache_config.scm_steps_policy,
+                verbose=verbose,
             )
-            if cache_config.scm_steps_mask_policy is not None
-            else None,
-            verbose=True,
-        )
 
     return refresh_cache_context
 
@@ -245,27 +245,28 @@ def enable_cache_for_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> Calla
         calibrator_config=calibrator_config,
     )
 
-    def refresh_cache_context(pipeline: Any, num_inference_steps: int) -> None:
+    def refresh_cache_context(pipeline: Any, num_inference_steps: int, verbose: bool = True) -> None:
         """Refresh cache context for the transformer with new num_inference_steps.
 
         Args:
             pipeline: The diffusion pipeline instance.
             num_inference_steps: New number of inference steps.
         """
-        cache_dit.refresh_context(
-            pipeline.transformer,
-            num_inference_steps=num_inference_steps,
-            cache_config=DBCacheConfig().reset(
-                steps_computation_mask=cache_dit.steps_mask(
-                    mask_policy=cache_config.scm_steps_mask_policy,
-                    total_steps=num_inference_steps,
+        if cache_config.scm_steps_mask_policy is None:
+            cache_dit.refresh_context(pipeline.transformer, num_inference_steps=num_inference_steps, verbose=verbose)
+        else:
+            cache_dit.refresh_context(
+                pipeline.transformer,
+                cache_config=DBCacheConfig().reset(
+                    num_inference_steps=num_inference_steps,
+                    steps_computation_mask=cache_dit.steps_mask(
+                        mask_policy=cache_config.scm_steps_mask_policy,
+                        total_steps=num_inference_steps,
+                    ),
+                    steps_computation_policy=cache_config.scm_steps_policy,
                 ),
-                steps_computation_policy=cache_config.scm_steps_policy,
+                verbose=verbose,
             )
-            if cache_config.scm_steps_mask_policy is not None
-            else None,
-            verbose=True,
-        )
 
     return refresh_cache_context
 
