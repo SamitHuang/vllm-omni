@@ -22,6 +22,7 @@ from vllm_omni.diffusion.data import (
 )
 from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineLoader
 from vllm_omni.diffusion.request import OmniDiffusionRequest
+from vllm_omni.diffusion.cache.selector import get_cache_backend
 
 logger = init_logger(__name__)
 
@@ -41,8 +42,6 @@ class GPUWorker:
         self.rank = rank
         self.od_config = od_config
         self.pipeline = None
-        self.cache_dit_adapter = None
-        self._last_num_inference_steps: int | None = None
 
         self.init_device_and_model()
 
@@ -80,13 +79,9 @@ class GPUWorker:
         time_after_load = time.perf_counter()
 
         # Enable cache-dit if configured. It must be called after pipeline is loaded.
-        self.cache_dit_adapter = None
-        if self.od_config.cache_adapter == "cache-dit" and self.od_config.cache_config:
-            # Avoid heavy import of cache-dit at the beginning
-            from vllm_omni.diffusion.cache.cache_dit_adapter import CacheDitAdapter
-
-            self.cache_dit_adapter = CacheDitAdapter(self.od_config.cache_config)
-            self.cache_dit_adapter.enable(self.pipeline)
+        self.cache_backend = get_cache_backend(self.od_config.cache_backend, self.od_config.cache_config)
+        if self.cache_backend is not None:
+            self.cache_backend.enable(self.pipeline)
 
         logger.info(
             "Model loading took %.4f GiB and %.6f seconds",
@@ -115,17 +110,12 @@ class GPUWorker:
         Execute a forward pass.
         """
         assert self.pipeline is not None
-        self.maybe_reset_cache()
         # TODO: dealing with first req for now
         req = reqs[0]
 
         # Refresh cache context for the first request or if num_inference_steps changed
-        if self.cache_dit_adapter is not None and self.cache_dit_adapter.is_enabled():
-            request_steps = req.num_inference_steps
-            if (self._last_num_inference_steps is None) or (request_steps != self._last_num_inference_steps):
-                logger.info(f"Refreshing cache context for transformer with num_inference_steps: {request_steps}")
-                self.cache_dit_adapter.refresh(self.pipeline, request_steps)
-                self._last_num_inference_steps = request_steps
+        if self.cache_backend is not None and self.cache_backend.is_enabled():
+            self.cache_backend.refresh(self.pipeline, req.num_inference_steps)
 
         output = self.pipeline.forward(req)
         return output

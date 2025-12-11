@@ -43,48 +43,6 @@ class TransformerConfig:
 
 @dataclass
 class DiffusionCacheConfig:
-<<<<<<< HEAD
-    """
-    Configuration for cache adapters (TeaCache, cache-dit, etc.).
-    
-    This dataclass provides a unified interface for cache configuration parameters.
-    It can be initialized from a dictionary and accessed via attributes.
-    
-    Common parameters:
-        - TeaCache: rel_l1_thresh, coefficients (optional)
-        - cache-dit: Fn_compute_blocks, Bn_compute_blocks, max_warmup_steps,
-                    residual_diff_threshold, enable_taylorseer, taylorseer_order,
-                    scm_steps_mask_policy, scm_steps_policy
-    
-    Example:
-        >>> # From dict (user-facing API) - partial config uses defaults for missing keys
-        >>> config = DiffusionCacheConfig.from_dict({"rel_l1_thresh": 0.3})
-        >>> # Access via attribute
-        >>> print(config.rel_l1_thresh)  # 0.3 (from dict)
-        >>> print(config.Fn_compute_blocks)  # 8 (default)
-        >>> # Empty dict uses all defaults
-        >>> default_config = DiffusionCacheConfig.from_dict({})
-        >>> print(default_config.rel_l1_thresh)  # 0.2 (default)
-    """
-    
-    # TeaCache parameters [tea_cache only]
-    # Default: 0.2 provides ~1.5x speedup with minimal quality loss (optimal balance)
-    rel_l1_thresh: float = 0.2
-    coefficients: list[float] | None = None  # Uses model-specific defaults if None
-    
-    # cache-dit parameters [cache-dit only]
-    # Default: 8 forward compute blocks for stable L1 difference calculation
-    Fn_compute_blocks: int = 8
-    # Default: 0 backward compute blocks (no fusion by default)
-    Bn_compute_blocks: int = 0
-    # Default: 4 warmup steps for cache-dit
-    max_warmup_steps: int = 4
-    # Default: 0.12 residual difference threshold (balanced performance/quality)
-    residual_diff_threshold: float = 0.12
-    # Default: Enable TaylorSeer for better forecasting
-    enable_taylorseer: bool = True
-    # Default: 1st order TaylorSeer polynomial
-=======
     """Configuration for diffusion model cache acceleration.
 
     This dataclass can be initialized from a dictionary for backward compatibility.
@@ -119,7 +77,6 @@ class DiffusionCacheConfig:
     # - From Reusing to Forecasting: Accelerating Diffusion Models with TaylorSeers
     # - FoCa: Forecast then Calibrate: Feature Caching as ODE for Efficient Diffusion Transformers
     enable_taylorseer: bool = False
->>>>>>> 7b78b5c (update cache-dit default param values)
     taylorseer_order: int = 1
     # Default: "fast" SCM mask policy for good speed/quality balance
     scm_steps_mask_policy: str = "fast"

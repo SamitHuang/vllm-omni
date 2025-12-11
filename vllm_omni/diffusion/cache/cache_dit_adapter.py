@@ -11,7 +11,7 @@ from typing import Any, Callable, Optional
 
 from vllm.logger import init_logger
 
-from vllm_omni.diffusion.data import OmniDiffusionConfig
+from vllm_omni.diffusion.data import DiffusionCacheConfig, OmniDiffusionConfig
 
 logger = init_logger(__name__)
 
@@ -26,7 +26,7 @@ except ImportError:
 
 
 # Registry of custom cache-dit enablers for specific models
-# Maps model class names to their cache-dit enablement functions
+# Maps pipeline names to their cache-dit enablement functions
 # Models in this registry require custom handling (e.g., dual-transformer architectures)
 # Will be populated after function definitions
 CUSTOM_DIT_ENABLERS: dict[str, Callable] = {}
@@ -275,8 +275,8 @@ CUSTOM_DIT_ENABLERS.update(
     }
 )
 
-class CacheDitAdapter:
-    """Adapter class for cache-dit acceleration on diffusion pipelines.
+class CacheDitBackend:
+    """Backend class for cache-dit acceleration on diffusion pipelines.
 
     This class encapsulates cache-dit enablement and refresh logic, providing
     a clean API for managing cache-dit acceleration on diffusion models.
@@ -287,15 +287,25 @@ class CacheDitAdapter:
         _refresh_func: Internal refresh function for updating cache context.
     """
 
-    def __init__(self, cache_config: Any):
-        """Initialize the cache-dit adapter.
+    def __init__(self, cache_config: Any = None):
+        """Initialize the cache-dit backend.
 
         Args:
-            cache_config: Cache configuration (DiffusionCacheConfig instance).
+            cache_config: Cache configuration (DiffusionCacheConfig instance, dict, or None).
+                         If None or empty, uses default DiffusionCacheConfig().
         """
-        self.cache_config = cache_config
+        # Use default config if cache_config is not provided or is empty
+        if cache_config is None:
+            self.cache_config = DiffusionCacheConfig()
+        elif isinstance(cache_config, dict):
+            # Convert dict to DiffusionCacheConfig, using defaults for missing keys
+            self.cache_config = DiffusionCacheConfig.from_dict(cache_config)
+        else:
+            self.cache_config = cache_config
+
         self.enabled = False
         self._refresh_func: Optional[Callable[[Any, int, bool], None]] = None
+        self._last_num_inference_steps: Optional[int] = None
 
     def enable(self, pipeline: Any) -> None:
         """Enable cache-dit on the pipeline if configured.
@@ -311,23 +321,18 @@ class CacheDitAdapter:
             logger.warning("cache-dit is not available, skipping cache-dit setup.")
             return
 
-        if not self.cache_config:
-            logger.warning("cache_config is empty. Skipping cache-dit enablement.")
-            return
-
-        # Extract model class name from pipeline
-        model_class_name = pipeline.__class__.__name__
-
+        # Extract pipeline name from pipeline
+        pipeline_name = pipeline.__class__.__name__
         # Check if this model has a custom cache-dit enabler
-        if model_class_name in CUSTOM_DIT_ENABLERS:
-            logger.info(f"Using custom cache-dit enabler for model: {model_class_name}")
-            self._refresh_func = CUSTOM_DIT_ENABLERS[model_class_name](pipeline, self.cache_config)
+        if pipeline_name in CUSTOM_DIT_ENABLERS:
+            logger.info(f"Using custom cache-dit enabler for model: {pipeline_name}")
+            self._refresh_func = CUSTOM_DIT_ENABLERS[pipeline_name](pipeline, self.cache_config)
         else:
             # For regular single-transformer models
             self._refresh_func = enable_cache_for_dit(pipeline, self.cache_config)
 
         self.enabled = True
-        logger.info(f"Cache-dit enabled successfully on {model_class_name}")
+        logger.info(f"Cache-dit enabled successfully on {pipeline_name}")
 
     def refresh(self, pipeline: Any, num_inference_steps: int, verbose: bool = True) -> None:
         """Refresh cache context with new num_inference_steps.
@@ -345,7 +350,12 @@ class CacheDitAdapter:
             logger.warning("Cache-dit is not enabled. Cannot refresh cache context.")
             return
 
-        self._refresh_func(pipeline, num_inference_steps, verbose)
+        # Only refresh if num_inference_steps has changed
+        if self._last_num_inference_steps is None or num_inference_steps != self._last_num_inference_steps:
+            if verbose:
+                logger.info(f"Refreshing cache context for transformer with num_inference_steps: {num_inference_steps}")
+            self._refresh_func(pipeline, num_inference_steps, verbose)
+            self._last_num_inference_steps = num_inference_steps
 
     def is_enabled(self) -> bool:
         """Check if cache-dit is enabled on this pipeline.
@@ -356,22 +366,22 @@ class CacheDitAdapter:
         return self.enabled
 
 
-def may_enable_cache_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> Optional["CacheDitAdapter"]:
+def may_enable_cache_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> Optional["CacheDitBackend"]:
     """Enable cache-dit on the pipeline if configured (convenience function).
 
-    This is a convenience function that creates and enables a CacheDitAdapter.
-    For new code, consider using CacheDitAdapter directly.
+    This is a convenience function that creates and enables a CacheDitBackend.
+    For new code, consider using CacheDitBackend directly.
 
     Args:
         pipeline: The diffusion pipeline instance.
         od_config: OmniDiffusionConfig with cache configuration.
 
     Returns:
-        A CacheDitAdapter instance if cache-dit is enabled, None otherwise.
+        A CacheDitBackend instance if cache-dit is enabled, None otherwise.
     """
-    if od_config.cache_adapter != "cache-dit" or not od_config.cache_config:
+    if od_config.cache_backend != "cache-dit" or not od_config.cache_config:
         return None
 
-    adapter = CacheDitAdapter(od_config.cache_config)
-    adapter.enable(pipeline)
-    return adapter if adapter.is_enabled() else None
+    backend = CacheDitBackend(od_config.cache_config)
+    backend.enable(pipeline)
+    return backend if backend.is_enabled() else None

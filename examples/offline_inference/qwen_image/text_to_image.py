@@ -46,11 +46,12 @@ def parse_args() -> argparse.Namespace:
         default=50,
         help="Number of denoising steps for the diffusion sampler.",
     )
-    # Cache-dit argument
     parser.add_argument(
-        "--enable_cache_dit",
-        action="store_true",
-        help="Enable cache-dit acceleration for diffusion inference.",
+        "--cache_backend",
+        type=str,
+        default=None,
+        choices=["cache_dit", "tea_cache"],
+        help="Cache backend to use for acceleration. Options: 'cache_dit', 'tea_cache'. Default: None.",
     )
     return parser.parse_args()
 
@@ -68,7 +69,7 @@ def main():
         model=args.model,
         vae_use_slicing=vae_use_slicing,
         vae_use_tiling=vae_use_tiling,
-        cache_adapter="cache-dit" if args.enable_cache_dit else None,
+        cache_backend=args.cache_backend,
         cache_config={
             # Scheme: Hybrid DBCache + SCM + TaylorSeer
             # DBCache
@@ -82,7 +83,7 @@ def main():
             # SCM
             "scm_steps_mask_policy": "fast",
             "scm_steps_policy": "dynamic",
-        },
+        } if args.cache_backend == "cache_dit" else None,
     )
 
     # Time profiling for generation

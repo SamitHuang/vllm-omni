@@ -73,37 +73,29 @@ def main():
     cache_config = None
     if args.cache_backend == "cache_dit":
         # cache-dit configuration: Hybrid DBCache + SCM + TaylorSeer
-        # All parameters marked with [cache-dit only] in DiffusionCacheConfig
         cache_config = {
-            # DBCache parameters [cache-dit only]
-            "Fn_compute_blocks": 8,  # Number of forward compute blocks
-            "Bn_compute_blocks": 0,  # Number of backward compute blocks
-            "max_warmup_steps": 4,  # Maximum warmup steps
-            "residual_diff_threshold": 0.12,  # Residual difference threshold for caching
-            # TaylorSeer parameters [cache-dit only]
-            "enable_taylorseer": True,  # Enable TaylorSeer forecasting
-            "taylorseer_order": 1,  # TaylorSeer polynomial order
-            # SCM (Step Computation Masking) parameters [cache-dit only]
-            "scm_steps_mask_policy": "fast",  # SCM mask policy: "slow", "medium", "fast", "ultra"
-            "scm_steps_policy": "dynamic",  # SCM steps policy: "dynamic" or "static"
+            # DBCache parameters
+            "Fn_compute_blocks": 8,
+            "Bn_compute_blocks": 0,
+            "max_warmup_steps": 4,
+            "residual_diff_threshold": 0.12,
+            # TaylorSeer parameters
+            "enable_taylorseer": True,
+            "taylorseer_order": 1,
+            # SCM (Step Computation Masking) parameters
+            "scm_steps_mask_policy": "fast",
+            "scm_steps_policy": "dynamic",
         }
-        print("✓ Using cache-dit backend with DBCache + SCM + TaylorSeer")
-        print(f"  Configuration: Fn={cache_config['Fn_compute_blocks']}, "
-              f"threshold={cache_config['residual_diff_threshold']}, "
-              f"SCM={cache_config['scm_steps_mask_policy']}")
+        print("Using cache-dit backend with DBCache + SCM + TaylorSeer")
     elif args.cache_backend == "tea_cache":
         # TeaCache configuration
-        # All parameters marked with [tea_cache only] in DiffusionCacheConfig
         cache_config = {
-            # TeaCache parameters [tea_cache only]
+            # TeaCache parameters
             "rel_l1_thresh": 0.2,  # Threshold for accumulated relative L1 distance
-            # Note: model_type is automatically detected from pipeline.__class__.__name__
-            # Note: coefficients will use model-specific defaults based on model_type
-            #       (e.g., QwenImagePipeline or FluxPipeline)
+            # model_type will be auto-detected from pipeline class name
+            # coefficients will use model-specific defaults if not provided
         }
-        print("✓ Using TeaCache backend")
-        print(f"  Configuration: rel_l1_thresh={cache_config['rel_l1_thresh']}")
-        print("  Note: model_type will be auto-detected from pipeline class name")
+        print("Using TeaCache backend")
 
     omni = Omni(
         model=args.model,
