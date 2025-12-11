@@ -3,7 +3,7 @@
 """
 cache-dit integration adapter for vllm-omni.
 
-This module provides functions to enable cache-dit acceleration on diffusion
+This module provides a CacheDitAdapter class to enable cache-dit acceleration on diffusion
 pipelines in vllm-omni, supporting both single and dual-transformer architectures.
 """
 
@@ -54,7 +54,7 @@ def _build_db_cache_config(cache_config: Any) -> DBCacheConfig:
     )
 
 
-def enable_cache_for_wan22(pipeline: Any, od_config: OmniDiffusionConfig) -> Callable[[int], None]:
+def enable_cache_for_wan22(pipeline: Any, cache_config: Any) -> Callable[[int], None]:
     """Enable cache-dit for Wan2.2 dual-transformer architecture.
 
     Wan2.2 uses two transformers (transformer and transformer_2) that need
@@ -62,12 +62,11 @@ def enable_cache_for_wan22(pipeline: Any, od_config: OmniDiffusionConfig) -> Cal
 
     Args:
         pipeline: The Wan2.2 pipeline instance.
-        od_config: OmniDiffusionConfig with cache configuration.
+        cache_config: DiffusionCacheConfig instance with cache configuration.
 
     Returns:
         A refresh function that can be called to update cache context with new num_inference_steps.
     """
-    cache_config = od_config.cache_config
 
     # Build DBCacheConfig for primary transformer
     primary_cache_config = _build_db_cache_config(cache_config)
@@ -192,7 +191,7 @@ def enable_cache_for_wan22(pipeline: Any, od_config: OmniDiffusionConfig) -> Cal
     return refresh_cache_context
 
 
-def enable_cache_for_flux(pipeline: Any, od_config: OmniDiffusionConfig) -> Callable[[int], None]:
+def enable_cache_for_flux(pipeline: Any, cache_config: Any) -> Callable[[int], None]:
     """Enable cache-dit for Flux dual-transformer architecture.
 
     Flux uses two transformers (transformer and transformer_2) that need
@@ -200,7 +199,7 @@ def enable_cache_for_flux(pipeline: Any, od_config: OmniDiffusionConfig) -> Call
 
     Args:
         pipeline: The Flux pipeline instance.
-        od_config: OmniDiffusionConfig with cache configuration.
+        cache_config: DiffusionCacheConfig instance with cache configuration.
 
     Returns:
         A refresh function that can be called to update cache context with new num_inference_steps.
@@ -208,18 +207,16 @@ def enable_cache_for_flux(pipeline: Any, od_config: OmniDiffusionConfig) -> Call
     raise NotImplementedError("cache-dit is not implemented for Flux pipeline.")
 
 
-def enable_cache_for_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> Callable[[int], None]:
+def enable_cache_for_dit(pipeline: Any, cache_config: Any) -> Callable[[int], None]:
     """Enable cache-dit for regular single-transformer DiT models.
 
     Args:
         pipeline: The diffusion pipeline instance.
-        od_config: OmniDiffusionConfig with cache configuration.
+        cache_config: DiffusionCacheConfig instance with cache configuration.
 
     Returns:
         A refresh function that can be called to update cache context with new num_inference_steps.
     """
-    cache_config = od_config.cache_config
-
     # Build DBCacheConfig with optional SCM support
     db_cache_config = _build_db_cache_config(cache_config)
 
@@ -230,9 +227,8 @@ def enable_cache_for_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> Calla
         calibrator_config = TaylorSeerCalibratorConfig(taylorseer_order=taylorseer_order)
         logger.info(f"TaylorSeer enabled with order={taylorseer_order}")
 
-    model_class_name = od_config.model_class_name
     logger.info(
-        f"Enabling cache-dit on {model_class_name} transformer: "
+        f"Enabling cache-dit on transformer: "
         f"Fn={db_cache_config.Fn_compute_blocks}, "
         f"Bn={db_cache_config.Bn_compute_blocks}, "
         f"W={db_cache_config.max_warmup_steps}, "
@@ -279,38 +275,103 @@ CUSTOM_DIT_ENABLERS.update(
     }
 )
 
+class CacheDitAdapter:
+    """Adapter class for cache-dit acceleration on diffusion pipelines.
 
-def may_enable_cache_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> Optional[Callable[[int], None]]:
-    """Enable cache-dit on the pipeline if configured.
+    This class encapsulates cache-dit enablement and refresh logic, providing
+    a clean API for managing cache-dit acceleration on diffusion models.
 
-    This function checks if cache-dit is enabled in the config and applies it
-    to the appropriate transformer(s) in the pipeline. It handles both
-    single-transformer and dual-transformer architectures.
+    Attributes:
+        cache_config: Cache configuration (DiffusionCacheConfig instance).
+        enabled: Whether cache-dit is enabled on this pipeline.
+        _refresh_func: Internal refresh function for updating cache context.
+    """
 
-    It also stores the cached num_inference_steps on the pipeline for later
-    validation during inference and returns a refresh function that can be
-    called to update the cache context with new num_inference_steps.
+    def __init__(self, cache_config: Any):
+        """Initialize the cache-dit adapter.
+
+        Args:
+            cache_config: Cache configuration (DiffusionCacheConfig instance).
+        """
+        self.cache_config = cache_config
+        self.enabled = False
+        self._refresh_func: Optional[Callable[[Any, int, bool], None]] = None
+
+    def enable(self, pipeline: Any) -> None:
+        """Enable cache-dit on the pipeline if configured.
+
+        This method checks if cache-dit is enabled in the config and applies it
+        to the appropriate transformer(s) in the pipeline. It handles both
+        single-transformer and dual-transformer architectures.
+
+        Args:
+            pipeline: The diffusion pipeline instance.
+        """
+        if not CACHE_DIT_AVAILABLE:
+            logger.warning("cache-dit is not available, skipping cache-dit setup.")
+            return
+
+        if not self.cache_config:
+            logger.warning("cache_config is empty. Skipping cache-dit enablement.")
+            return
+
+        # Extract model class name from pipeline
+        model_class_name = pipeline.__class__.__name__
+
+        # Check if this model has a custom cache-dit enabler
+        if model_class_name in CUSTOM_DIT_ENABLERS:
+            logger.info(f"Using custom cache-dit enabler for model: {model_class_name}")
+            self._refresh_func = CUSTOM_DIT_ENABLERS[model_class_name](pipeline, self.cache_config)
+        else:
+            # For regular single-transformer models
+            self._refresh_func = enable_cache_for_dit(pipeline, self.cache_config)
+
+        self.enabled = True
+        logger.info(f"Cache-dit enabled successfully on {model_class_name}")
+
+    def refresh(self, pipeline: Any, num_inference_steps: int, verbose: bool = True) -> None:
+        """Refresh cache context with new num_inference_steps.
+
+        This method updates the cache context when num_inference_steps changes
+        during inference. For dual-transformer models (e.g., Wan2.2), it automatically
+        splits the steps based on boundary_ratio.
+
+        Args:
+            pipeline: The diffusion pipeline instance.
+            num_inference_steps: New number of inference steps.
+            verbose: Whether to log refresh operations.
+        """
+        if not self.enabled or self._refresh_func is None:
+            logger.warning("Cache-dit is not enabled. Cannot refresh cache context.")
+            return
+
+        self._refresh_func(pipeline, num_inference_steps, verbose)
+
+    def is_enabled(self) -> bool:
+        """Check if cache-dit is enabled on this pipeline.
+
+        Returns:
+            True if cache-dit is enabled, False otherwise.
+        """
+        return self.enabled
+
+
+def may_enable_cache_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> Optional["CacheDitAdapter"]:
+    """Enable cache-dit on the pipeline if configured (convenience function).
+
+    This is a convenience function that creates and enables a CacheDitAdapter.
+    For new code, consider using CacheDitAdapter directly.
 
     Args:
         pipeline: The diffusion pipeline instance.
         od_config: OmniDiffusionConfig with cache configuration.
 
     Returns:
-        A refresh function that can be called to update cache context with new num_inference_steps,
-        or None if cache-dit is not enabled.
+        A CacheDitAdapter instance if cache-dit is enabled, None otherwise.
     """
-    if not CACHE_DIT_AVAILABLE:
-        logger.warning("cache-dit is not available, skipping cache-dit setup.")
+    if od_config.cache_adapter != "cache-dit" or not od_config.cache_config:
         return None
 
-    # Check if this model has a custom cache-dit enabler
-    model_class_name = od_config.model_class_name
-    if model_class_name in CUSTOM_DIT_ENABLERS:
-        logger.info(f"Using custom cache-dit enabler for model: {model_class_name}")
-        refresh_func = CUSTOM_DIT_ENABLERS[model_class_name](pipeline, od_config)
-        return refresh_func
-
-    # For regular single-transformer models
-    refresh_func = enable_cache_for_dit(pipeline, od_config)
-
-    return refresh_func
+    adapter = CacheDitAdapter(od_config.cache_config)
+    adapter.enable(pipeline)
+    return adapter if adapter.is_enabled() else None

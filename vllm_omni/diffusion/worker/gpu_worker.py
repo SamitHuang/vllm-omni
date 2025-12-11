@@ -41,7 +41,7 @@ class GPUWorker:
         self.rank = rank
         self.od_config = od_config
         self.pipeline = None
-        self.refresh_cache_context = None
+        self.cache_dit_adapter = None
         self._last_num_inference_steps: int | None = None
 
         self.init_device_and_model()
@@ -80,11 +80,13 @@ class GPUWorker:
         time_after_load = time.perf_counter()
 
         # Enable cache-dit if configured. It must be called after pipeline is loaded.
-        if self.od_config.cache_adapter == "cache-dit":
+        self.cache_dit_adapter = None
+        if self.od_config.cache_adapter == "cache-dit" and self.od_config.cache_config:
             # Avoid heavy import of cache-dit at the beginning
-            from vllm_omni.diffusion.cache.cache_dit_adapter import may_enable_cache_dit
+            from vllm_omni.diffusion.cache.cache_dit_adapter import CacheDitAdapter
 
-            self.refresh_cache_context = may_enable_cache_dit(self.pipeline, self.od_config)
+            self.cache_dit_adapter = CacheDitAdapter(self.od_config.cache_config)
+            self.cache_dit_adapter.enable(self.pipeline)
 
         logger.info(
             "Model loading took %.4f GiB and %.6f seconds",
@@ -118,11 +120,11 @@ class GPUWorker:
         req = reqs[0]
 
         # Refresh cache context for the first request or if num_inference_steps changed
-        if self.refresh_cache_context is not None:
+        if self.cache_dit_adapter is not None and self.cache_dit_adapter.is_enabled():
             request_steps = req.num_inference_steps
             if (self._last_num_inference_steps is None) or (request_steps != self._last_num_inference_steps):
                 logger.info(f"Refreshing cache context for transformer with num_inference_steps: {request_steps}")
-                self.refresh_cache_context(self.pipeline, request_steps)
+                self.cache_dit_adapter.refresh(self.pipeline, request_steps)
                 self._last_num_inference_steps = request_steps
 
         output = self.pipeline.forward(req)
