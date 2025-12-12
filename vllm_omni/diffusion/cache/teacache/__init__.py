@@ -25,7 +25,7 @@ Usage:
     # export DIFFUSION_CACHE_BACKEND=tea_cache
 """
 
-from vllm_omni.diffusion.cache.teacache.adapter import TeaCacheBackend
+from vllm_omni.diffusion.cache.teacache.backend import TeaCacheBackend
 from vllm_omni.diffusion.cache.teacache.config import TeaCacheConfig
 from vllm_omni.diffusion.cache.teacache.extractors import (
     CacheContext,

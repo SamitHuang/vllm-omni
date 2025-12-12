@@ -49,12 +49,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cache_backend",
         type=str,
-        default="tea_cache",
+        default=None,
         choices=["cache_dit", "tea_cache"],
         help=(
             "Cache backend to use for acceleration. "
             "Options: 'cache_dit' (DBCache + SCM + TaylorSeer), 'tea_cache' (Timestep Embedding Aware Cache). "
-            "Default: 'tea_cache' (Timestep Embedding Aware Cache enabled)."
+            "Default: None (no cache acceleration)."
         ),
     )
     return parser.parse_args()
@@ -73,29 +73,30 @@ def main():
     cache_config = None
     if args.cache_backend == "cache_dit":
         # cache-dit configuration: Hybrid DBCache + SCM + TaylorSeer
+        # All parameters marked with [cache-dit only] in DiffusionCacheConfig
         cache_config = {
-            # DBCache parameters
-            "Fn_compute_blocks": 8,
-            "Bn_compute_blocks": 0,
-            "max_warmup_steps": 4,
-            "residual_diff_threshold": 0.12,
-            # TaylorSeer parameters
-            "enable_taylorseer": True,
-            "taylorseer_order": 1,
-            # SCM (Step Computation Masking) parameters
-            "scm_steps_mask_policy": "fast",
-            "scm_steps_policy": "dynamic",
+            # DBCache parameters [cache-dit only]
+            "Fn_compute_blocks": 1,  # Optimized for single-transformer models
+            "Bn_compute_blocks": 0,  # Number of backward compute blocks
+            "max_warmup_steps": 4,  # Maximum warmup steps (works for few-step models)
+            "residual_diff_threshold": 0.24,  # Higher threshold for more aggressive caching
+            "max_continuous_cached_steps": 3,  # Limit to prevent precision degradation
+            # TaylorSeer parameters [cache-dit only]
+            "enable_taylorseer": False,  # Disabled by default (not suitable for few-step models)
+            "taylorseer_order": 1,  # TaylorSeer polynomial order
+            # SCM (Step Computation Masking) parameters [cache-dit only]
+            "scm_steps_mask_policy": "fast",  # SCM mask policy: "slow", "medium", "fast", "ultra"
+            "scm_steps_policy": "dynamic",  # SCM steps policy: "dynamic" or "static"
         }
-        print("Using cache-dit backend with DBCache + SCM + TaylorSeer")
     elif args.cache_backend == "tea_cache":
         # TeaCache configuration
+        # All parameters marked with [tea_cache only] in DiffusionCacheConfig
         cache_config = {
-            # TeaCache parameters
+            # TeaCache parameters [tea_cache only]
             "rel_l1_thresh": 0.2,  # Threshold for accumulated relative L1 distance
-            # model_type will be auto-detected from pipeline class name
-            # coefficients will use model-specific defaults if not provided
+            # Note: coefficients will use model-specific defaults based on model_type
+            #       (e.g., QwenImagePipeline or FluxPipeline)
         }
-        print("Using TeaCache backend")
 
     omni = Omni(
         model=args.model,
@@ -106,14 +107,13 @@ def main():
     )
 
     # Time profiling for generation
-    backend_info = f" (cache_backend: {args.cache_backend})" if args.cache_backend else " (no cache)"
-    print(f"\n{'='*60}")
-    print(f"Generation Configuration:")
+    print(f"\n{'=' * 60}")
+    print("Generation Configuration:")
     print(f"  Model: {args.model}")
     print(f"  Inference steps: {args.num_inference_steps}")
     print(f"  Cache backend: {args.cache_backend if args.cache_backend else 'None (no acceleration)'}")
     print(f"  Image size: {args.width}x{args.height}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     generation_start = time.perf_counter()
     images = omni.generate(

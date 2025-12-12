@@ -113,7 +113,6 @@ class GPUWorker:
         # TODO: dealing with first req for now
         req = reqs[0]
 
-        # Refresh cache context for the first request or if num_inference_steps changed
         if self.cache_backend is not None and self.cache_backend.is_enabled():
             self.cache_backend.refresh(self.pipeline, req.num_inference_steps)
 

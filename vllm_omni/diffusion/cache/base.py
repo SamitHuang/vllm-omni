@@ -6,23 +6,23 @@ Base cache backend interface for diffusion models.
 
 This module defines the abstract base class that all cache backends must implement.
 Cache backends provide a unified interface for applying different caching strategies
-<<<<<<< HEAD
-(TeaCache, DeepCache, etc.) to transformer models using hooks.
-=======
-(cache-dit, TeaCache, etc.) to diffusion pipelines.
+to transformer models.
 
-All cache backends must implement:
+Main cache backend implementations:
+1. CacheDiTBackend: Implements cache-dit acceleration (DBCache, SCM, TaylorSeer) using
+   the cache-dit library. Inherits from CacheBackend. Used via cache_backend="cache_dit".
+2. TeaCacheBackend: Hook-based backend for TeaCache acceleration. Inherits from
+   CacheBackend. Used via cache_backend="tea_cache".
+
+All backends implement the same interface:
 - enable(pipeline): Enable cache on the pipeline
-- refresh(pipeline, num_inference_steps): Refresh cache context when steps change
+- refresh(pipeline, num_inference_steps, verbose): Refresh cache state
 - is_enabled(): Check if cache is enabled
->>>>>>> bc91b0a (tmp save)
 """
 
 from abc import ABC, abstractmethod
 from typing import Any
 
-
-<<<<<<< HEAD
 from vllm_omni.diffusion.data import DiffusionCacheConfig
 
 
@@ -30,95 +30,71 @@ class CacheBackend(ABC):
     """
     Abstract base class for cache backends.
 
+    All cache backend implementations (CacheDiTBackend, TeaCacheBackend, etc.) inherit
+    from this base class and implement the enable() and refresh() methods to manage
+    cache lifecycle.
+
     Cache backends apply caching strategies to transformer models to accelerate
-    inference. Each backend type (TeaCache, DeepCache, etc.) implements the
-    apply() and reset() methods to manage cache lifecycle.
+    inference. Different backends use different underlying mechanisms (e.g., cache-dit
+    library for CacheDiTBackend, hooks for TeaCacheBackend), but all share the same
+    unified interface.
 
     Attributes:
         config: DiffusionCacheConfig instance containing cache-specific configuration parameters
+        enabled: Boolean flag indicating whether cache is enabled (set to True after enable() is called)
     """
 
     def __init__(self, config: DiffusionCacheConfig):
-=======
-class BaseCacheBackend(ABC):
-    """
-    Abstract base class for cache backends.
-
-    Cache backends provide a unified interface for cache acceleration on diffusion
-    pipelines. Each backend type (cache-dit, TeaCache, etc.) implements the
-    enable(), refresh(), and is_enabled() methods to manage cache lifecycle.
-
-    Attributes:
-        cache_config: Cache configuration (dict or DiffusionCacheConfig instance).
-        enabled: Whether cache is enabled on the pipeline.
-    """
-
-    def __init__(self, cache_config: Any = None):
->>>>>>> bc91b0a (tmp save)
         """
         Initialize cache backend with configuration.
 
         Args:
-<<<<<<< HEAD
             config: DiffusionCacheConfig instance with cache-specific parameters
-=======
-            cache_config: Cache-specific configuration (dict or DiffusionCacheConfig instance).
->>>>>>> bc91b0a (tmp save)
         """
-        self.cache_config = cache_config
+        self.config = config
         self.enabled = False
 
     @abstractmethod
-<<<<<<< HEAD
-    def apply(self, pipeline: Any) -> None:
-=======
     def enable(self, pipeline: Any) -> None:
->>>>>>> bc91b0a (tmp save)
         """
         Enable cache on the pipeline.
 
-        This method should apply the cache acceleration to the pipeline's transformer(s).
-        Called once during pipeline initialization.
+        This method applies the caching strategy to the transformer(s) in the pipeline.
+        The specific implementation depends on the backend (e.g., hooks for TeaCacheBackend,
+        cache-dit library for CacheDiTBackend). Called once during pipeline initialization.
 
         Args:
-<<<<<<< HEAD
             pipeline: Diffusion pipeline instance. The backend can extract:
                      - transformer: via pipeline.transformer
                      - model_type: via pipeline.__class__.__name__
-=======
-            pipeline: The diffusion pipeline instance.
->>>>>>> bc91b0a (tmp save)
         """
         raise NotImplementedError("Subclasses must implement enable()")
 
     @abstractmethod
     def refresh(self, pipeline: Any, num_inference_steps: int, verbose: bool = True) -> None:
         """
-        Refresh cache context with new num_inference_steps.
+        Refresh cache state for new generation.
 
-        This method should update the cache context when num_inference_steps changes
-        during inference. For some backends, this may reset cache state.
+        This method should clear any cached values and reset counters/accumulators.
+        Called at the start of each generation to ensure clean state.
 
         Args:
-            pipeline: The diffusion pipeline instance.
-            num_inference_steps: New number of inference steps.
-            verbose: Whether to log refresh operations.
+            pipeline: Diffusion pipeline instance. The backend can extract:
+                     - transformer: via pipeline.transformer
+            num_inference_steps: Number of inference steps for the current generation.
+                                May be used for cache context updates.
+            verbose: Whether to log refresh operations (default: True)
         """
         raise NotImplementedError("Subclasses must implement refresh()")
 
-    @abstractmethod
     def is_enabled(self) -> bool:
         """
-        Check if cache is enabled on this pipeline.
+        Check if cache is enabled on this backend.
 
         Returns:
             True if cache is enabled, False otherwise.
         """
-        raise NotImplementedError("Subclasses must implement is_enabled()")
+        return self.enabled
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(enabled={self.enabled})"
-
-
-# Backward compatibility alias
-CacheAdapter = BaseCacheBackend
+        return f"{self.__class__.__name__}(config={self.config})"
