@@ -2,9 +2,9 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 """
-TeaCache adapter implementation.
+TeaCache backend implementation.
 
-This module provides the TeaCache adapter that implements the CacheAdapter
+This module provides the TeaCache backend that implements the CacheBackend
 interface using the hooks-based TeaCache system.
 """
 
@@ -13,15 +13,15 @@ from typing import Any
 import torch
 from vllm.logger import init_logger
 
-from vllm_omni.diffusion.cache.base import CacheAdapter
-from vllm_omni.diffusion.cache.registry import CacheType, register_cache_adapter
+from vllm_omni.diffusion.cache.base import CacheBackend
+from vllm_omni.diffusion.cache.registry import CacheType, register_cache_backend
 from vllm_omni.diffusion.cache.teacache.config import TeaCacheConfig
 from vllm_omni.diffusion.cache.teacache.hook import TeaCacheHook, apply_teacache_hook
 
 logger = init_logger(__name__)
 
 
-class TeaCacheAdapter(CacheAdapter):
+class TeaCacheBackend(CacheBackend):
     """
     TeaCache implementation using hooks.
 
@@ -29,23 +29,23 @@ class TeaCacheAdapter(CacheAdapter):
     that speeds up diffusion inference by reusing transformer block computations
     when consecutive timestep embeddings are similar.
 
-    The adapter applies TeaCache hooks to the transformer which intercept the
+    The backend applies TeaCache hooks to the transformer which intercept the
     forward pass and implement the caching logic transparently.
 
     Example:
         >>> from vllm_omni.diffusion.data import DiffusionCacheConfig
-        >>> adapter = TeaCacheAdapter(DiffusionCacheConfig(rel_l1_thresh=0.2))
-        >>> adapter.apply(pipeline)
+        >>> backend = TeaCacheBackend(DiffusionCacheConfig(rel_l1_thresh=0.2))
+        >>> backend.apply(pipeline)
         >>> # Generate with cache enabled
-        >>> adapter.reset(pipeline.transformer)  # Reset before each generation
-        >>> # Access config attributes: adapter.config.rel_l1_thresh
+        >>> backend.reset(pipeline.transformer)  # Reset before each generation
+        >>> # Access config attributes: backend.config.rel_l1_thresh
     """
 
     def apply(self, pipeline: Any) -> None:
         """
         Apply TeaCache to transformer using hooks.
 
-        This creates a TeaCacheConfig from the adapter's DiffusionCacheConfig
+        This creates a TeaCacheConfig from the backend's DiffusionCacheConfig
         and applies the TeaCache hook to the transformer.
 
         Args:
@@ -102,5 +102,5 @@ class TeaCacheAdapter(CacheAdapter):
             logger.warning("Transformer has no hook registry, TeaCache may not be applied")
 
 
-# Register TeaCache adapter in the global registry
-register_cache_adapter(CacheType.TEA_CACHE, TeaCacheAdapter)
+# Register TeaCache backend in the global registry
+register_cache_backend(CacheType.TEA_CACHE, TeaCacheBackend)

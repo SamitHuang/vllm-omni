@@ -2,9 +2,9 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 """
-Cache adapter registry for diffusion models.
+Cache backend registry for diffusion models.
 
-This module provides a registry pattern for cache adapters, allowing dynamic
+This module provides a registry pattern for cache backends, allowing dynamic
 registration and instantiation of different cache types (TeaCache, DeepCache, etc.).
 """
 
@@ -13,14 +13,14 @@ from typing import Any
 
 from vllm.logger import init_logger
 
-from vllm_omni.diffusion.cache.base import CacheAdapter
+from vllm_omni.diffusion.cache.base import CacheBackend
 from vllm_omni.diffusion.data import DiffusionCacheConfig
 
 logger = init_logger(__name__)
 
 
 class CacheType(Enum):
-    """Supported cache adapter types."""
+    """Supported cache backend types."""
 
     NONE = "none"
     TEA_CACHE = "tea_cache"
@@ -29,52 +29,52 @@ class CacheType(Enum):
     # DISTRI_FUSION = "distri_fusion"
 
 
-# Global registry mapping cache types to adapter classes
-CACHE_ADAPTER_REGISTRY: dict[CacheType, type[CacheAdapter]] = {}
+# Global registry mapping cache types to backend classes
+CACHE_BACKEND_REGISTRY: dict[CacheType, type[CacheBackend]] = {}
 
 
-def register_cache_adapter(cache_type: CacheType, adapter_class: type[CacheAdapter]) -> None:
+def register_cache_backend(cache_type: CacheType, backend_class: type[CacheBackend]) -> None:
     """
-    Register a cache adapter class for a given cache type.
+    Register a cache backend class for a given cache type.
 
     This allows extending the system with new cache types without modifying
     the core cache infrastructure.
 
     Args:
         cache_type: CacheType enum value
-        adapter_class: CacheAdapter subclass to register
+        backend_class: CacheBackend subclass to register
 
     Example:
-        >>> register_cache_adapter(CacheType.TEA_CACHE, TeaCacheAdapter)
+        >>> register_cache_backend(CacheType.TEA_CACHE, TeaCacheBackend)
     """
-    if not issubclass(adapter_class, CacheAdapter):
-        raise TypeError(f"{adapter_class} must be a subclass of CacheAdapter")
+    if not issubclass(backend_class, CacheBackend):
+        raise TypeError(f"{backend_class} must be a subclass of CacheBackend")
 
-    CACHE_ADAPTER_REGISTRY[cache_type] = adapter_class
-    logger.debug(f"Registered cache adapter: {cache_type.value} -> {adapter_class.__name__}")
+    CACHE_BACKEND_REGISTRY[cache_type] = backend_class
+    logger.debug(f"Registered cache backend: {cache_type.value} -> {backend_class.__name__}")
 
 
-def get_cache_adapter(cache_type: str, config: DiffusionCacheConfig | dict[str, Any]) -> CacheAdapter:
+def get_cache_backend(cache_type: str, config: DiffusionCacheConfig | dict[str, Any]) -> CacheBackend:
     """
-    Factory function to get cache adapter instance.
+    Factory function to get cache backend instance.
 
     Converts string cache type to enum, looks up in registry, and instantiates
-    the appropriate adapter class with the provided configuration.
+    the appropriate backend class with the provided configuration.
 
     Args:
         cache_type: String name of cache type ("tea_cache", "deep_cache", etc.)
-        config: DiffusionCacheConfig instance or dictionary to pass to adapter constructor.
+        config: DiffusionCacheConfig instance or dictionary to pass to backend constructor.
                 If dict, will be converted to DiffusionCacheConfig.
 
     Returns:
-        Instantiated CacheAdapter subclass
+        Instantiated CacheBackend subclass
 
     Raises:
         ValueError: If cache_type is unknown or not registered
 
     Example:
-        >>> adapter = get_cache_adapter("tea_cache", DiffusionCacheConfig(rel_l1_thresh=0.2))
-        >>> adapter.apply(pipeline)
+        >>> backend = get_cache_backend("tea_cache", DiffusionCacheConfig(rel_l1_thresh=0.2))
+        >>> backend.apply(pipeline)
     """
     # Normalize cache type string
     cache_type_str = cache_type.lower().strip()
@@ -88,19 +88,19 @@ def get_cache_adapter(cache_type: str, config: DiffusionCacheConfig | dict[str, 
 
     # Check if it's the special "none" case
     if cache_enum == CacheType.NONE:
-        raise ValueError("Cannot instantiate adapter for cache_type='none'. Use setup_cache() which handles this case.")
+        raise ValueError("Cannot instantiate backend for cache_type='none'. Use setup_cache() which handles this case.")
 
     # Lookup in registry
-    if cache_enum not in CACHE_ADAPTER_REGISTRY:
+    if cache_enum not in CACHE_BACKEND_REGISTRY:
         raise ValueError(
-            f"Cache type '{cache_type}' is not registered. Registered types: {list(CACHE_ADAPTER_REGISTRY.keys())}"
+            f"Cache type '{cache_type}' is not registered. Registered types: {list(CACHE_BACKEND_REGISTRY.keys())}"
         )
 
-    adapter_class = CACHE_ADAPTER_REGISTRY[cache_enum]
+    backend_class = CACHE_BACKEND_REGISTRY[cache_enum]
 
     # Convert dict to DiffusionCacheConfig if needed
     if isinstance(config, dict):
         config = DiffusionCacheConfig.from_dict(config)
 
     # Instantiate and return
-    return adapter_class(config)
+    return backend_class(config)

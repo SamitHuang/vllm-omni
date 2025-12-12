@@ -191,8 +191,8 @@ class OmniDiffusionConfig:
     # Cache strategy (legacy)
     cache_strategy: str = "none"
 
-    # Cache adapter configuration (NEW)
-    cache_adapter: str = "none"  # "tea_cache", "deep_cache", etc.
+    # Cache backend configuration (NEW)
+    cache_backend: str = "none"  # "tea_cache", "deep_cache", etc.
     cache_config: DiffusionCacheConfig | dict[str, Any] = field(default_factory=dict)
 
     # Distributed executor backend
@@ -349,9 +349,11 @@ class OmniDiffusionConfig:
 
     @classmethod
     def from_kwargs(cls, **kwargs: Any) -> "OmniDiffusionConfig":
-        # Check environment variable as fallback for cache_adapter
-        if "cache_adapter" not in kwargs:
-            kwargs["cache_adapter"] = os.environ.get("DIFFUSION_CACHE_ADAPTER", "none").lower()
+        # Check environment variable as fallback for cache_backend
+        # Support both old DIFFUSION_CACHE_ADAPTER and new DIFFUSION_CACHE_BACKEND for backwards compatibility
+        if "cache_backend" not in kwargs:
+            cache_backend = os.environ.get("DIFFUSION_CACHE_BACKEND") or os.environ.get("DIFFUSION_CACHE_ADAPTER")
+            kwargs["cache_backend"] = cache_backend.lower() if cache_backend else "none"
         return cls(**kwargs)
 
 

@@ -47,12 +47,12 @@ def parse_args() -> argparse.Namespace:
         help="Number of denoising steps for the diffusion sampler.",
     )
     parser.add_argument(
-        "--cache_adapter",
+        "--cache_backend",
         type=str,
         default="tea_cache",
         choices=["cache_dit", "tea_cache"],
         help=(
-            "Cache adapter to use for acceleration. "
+            "Cache backend to use for acceleration. "
             "Options: 'cache_dit' (DBCache + SCM + TaylorSeer), 'tea_cache' (Timestep Embedding Aware Cache). "
             "Default: 'tea_cache' (Timestep Embedding Aware Cache enabled)."
         ),
@@ -69,9 +69,9 @@ def main():
     vae_use_slicing = is_npu()
     vae_use_tiling = is_npu()
 
-    # Configure cache based on adapter type
+    # Configure cache based on backend type
     cache_config = None
-    if args.cache_adapter == "cache_dit":
+    if args.cache_backend == "cache_dit":
         # cache-dit configuration: Hybrid DBCache + SCM + TaylorSeer
         # All parameters marked with [cache-dit only] in DiffusionCacheConfig
         cache_config = {
@@ -87,11 +87,11 @@ def main():
             "scm_steps_mask_policy": "fast",  # SCM mask policy: "slow", "medium", "fast", "ultra"
             "scm_steps_policy": "dynamic",  # SCM steps policy: "dynamic" or "static"
         }
-        print("✓ Using cache-dit adapter with DBCache + SCM + TaylorSeer")
+        print("✓ Using cache-dit backend with DBCache + SCM + TaylorSeer")
         print(f"  Configuration: Fn={cache_config['Fn_compute_blocks']}, "
               f"threshold={cache_config['residual_diff_threshold']}, "
               f"SCM={cache_config['scm_steps_mask_policy']}")
-    elif args.cache_adapter == "tea_cache":
+    elif args.cache_backend == "tea_cache":
         # TeaCache configuration
         # All parameters marked with [tea_cache only] in DiffusionCacheConfig
         cache_config = {
@@ -101,7 +101,7 @@ def main():
             # Note: coefficients will use model-specific defaults based on model_type
             #       (e.g., QwenImagePipeline or FluxPipeline)
         }
-        print("✓ Using TeaCache adapter")
+        print("✓ Using TeaCache backend")
         print(f"  Configuration: rel_l1_thresh={cache_config['rel_l1_thresh']}")
         print("  Note: model_type will be auto-detected from pipeline class name")
 
@@ -109,17 +109,17 @@ def main():
         model=args.model,
         vae_use_slicing=vae_use_slicing,
         vae_use_tiling=vae_use_tiling,
-        cache_adapter=args.cache_adapter,
+        cache_backend=args.cache_backend,
         cache_config=cache_config,
     )
 
     # Time profiling for generation
-    adapter_info = f" (cache_adapter: {args.cache_adapter})" if args.cache_adapter else " (no cache)"
+    backend_info = f" (cache_backend: {args.cache_backend})" if args.cache_backend else " (no cache)"
     print(f"\n{'='*60}")
     print(f"Generation Configuration:")
     print(f"  Model: {args.model}")
     print(f"  Inference steps: {args.num_inference_steps}")
-    print(f"  Cache adapter: {args.cache_adapter if args.cache_adapter else 'None (no acceleration)'}")
+    print(f"  Cache backend: {args.cache_backend if args.cache_backend else 'None (no acceleration)'}")
     print(f"  Image size: {args.width}x{args.height}")
     print(f"{'='*60}\n")
 

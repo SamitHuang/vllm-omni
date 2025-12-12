@@ -2,10 +2,10 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 """
-Base cache adapter interface for diffusion models.
+Base cache backend interface for diffusion models.
 
-This module defines the abstract base class that all cache adapters must implement.
-Cache adapters provide a unified interface for applying different caching strategies
+This module defines the abstract base class that all cache backends must implement.
+Cache backends provide a unified interface for applying different caching strategies
 (TeaCache, DeepCache, etc.) to transformer models using hooks.
 """
 
@@ -17,12 +17,12 @@ import torch
 from vllm_omni.diffusion.data import DiffusionCacheConfig
 
 
-class CacheAdapter(ABC):
+class CacheBackend(ABC):
     """
-    Abstract base class for cache adapters.
+    Abstract base class for cache backends.
 
-    Cache adapters apply caching strategies to transformer models to accelerate
-    inference. Each adapter type (TeaCache, DeepCache, etc.) implements the
+    Cache backends apply caching strategies to transformer models to accelerate
+    inference. Each backend type (TeaCache, DeepCache, etc.) implements the
     apply() and reset() methods to manage cache lifecycle.
 
     Attributes:
@@ -31,7 +31,7 @@ class CacheAdapter(ABC):
 
     def __init__(self, config: DiffusionCacheConfig):
         """
-        Initialize cache adapter with configuration.
+        Initialize cache backend with configuration.
 
         Args:
             config: DiffusionCacheConfig instance with cache-specific parameters
@@ -48,7 +48,7 @@ class CacheAdapter(ABC):
         initialization.
 
         Args:
-            pipeline: Diffusion pipeline instance. The adapter can extract:
+            pipeline: Diffusion pipeline instance. The backend can extract:
                      - transformer: via pipeline.transformer
                      - model_type: via pipeline.__class__.__name__
         """

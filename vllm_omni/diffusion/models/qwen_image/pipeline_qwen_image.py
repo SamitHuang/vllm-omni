@@ -34,6 +34,7 @@ from vllm_omni.model_executor.model_loader.weight_utils import (
     download_weights_from_hf_specific,
 )
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -268,10 +269,11 @@ class QwenImagePipeline(
             self.device
         )
         self.transformer = QwenImageTransformer2DModel(od_config=od_config)
+
         self.tokenizer = Qwen2Tokenizer.from_pretrained(model, subfolder="tokenizer", local_files_only=local_files_only)
 
-        # Initialize cache adapter to None (will be set by worker or setup_cache if needed)
-        self._cache_adapter = None
+        # Initialize cache backend to None (will be set by worker or setup_cache if needed)
+        self._cache_backend = None
 
         self.stage = None
 
@@ -566,7 +568,7 @@ class QwenImagePipeline(
                 "attention_kwargs": self.attention_kwargs,
                 "return_dict": False,
             }
-            if self._cache_adapter is not None:
+            if self._cache_backend is not None:
                 transformer_kwargs["cache_branch"] = "positive"
 
             noise_pred = self.transformer(**transformer_kwargs)[0]
@@ -585,7 +587,7 @@ class QwenImagePipeline(
                     "attention_kwargs": self.attention_kwargs,
                     "return_dict": False,
                 }
-                if self._cache_adapter is not None:
+                if self._cache_backend is not None:
                     neg_transformer_kwargs["cache_branch"] = "negative"
 
                 neg_noise_pred = self.transformer(**neg_transformer_kwargs)[0]

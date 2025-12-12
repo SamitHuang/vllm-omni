@@ -77,6 +77,11 @@ class GPUWorker:
             )
         time_after_load = time.perf_counter()
 
+        # Enable cache-dit if configured
+        if self.od_config.cache_adapter == "cache-dit":
+            from vllm_omni.diffusion.cache.cache_dit_adapter import may_enable_cache_dit
+            may_enable_cache_dit(self.pipeline, self.od_config)
+
         logger.info(
             "Model loading took %.4f GiB and %.6f seconds",
             m.consumed_memory / GiB_bytes,
@@ -84,19 +89,19 @@ class GPUWorker:
         )
         logger.info(f"Worker {self.rank}: Model loaded successfully.")
 
-        # Apply cache adapter (model_type is automatically extracted from pipeline.__class__.__name__)
+        # Apply cache backend (model_type is automatically extracted from pipeline.__class__.__name__)
         from vllm_omni.diffusion.cache.apply import setup_cache
 
-        self.pipeline._cache_adapter = setup_cache(
+        self.pipeline._cache_backend = setup_cache(
             self.pipeline,
-            cache_type=self.od_config.cache_adapter,
+            cache_type=self.od_config.cache_backend,
             cache_config=self.od_config.cache_config,
         )
 
     def maybe_reset_cache(self) -> None:
         """Reset cache state before each generation if applicable."""
-        if self.pipeline._cache_adapter is not None:
-            self.pipeline._cache_adapter.reset(self.pipeline.transformer)
+        if self.pipeline._cache_backend is not None:
+            self.pipeline._cache_backend.reset(self.pipeline.transformer)
 
     @torch.inference_mode()
     def execute_model(self, reqs: list[OmniDiffusionRequest], od_config: OmniDiffusionConfig) -> DiffusionOutput:
@@ -107,6 +112,23 @@ class GPUWorker:
         self.maybe_reset_cache()
         # TODO: dealing with first req for now
         req = reqs[0]
+
+        # Check if cache-dit is enabled and warn if num_inference_steps changed
+        if hasattr(self.pipeline, "_cache_dit_num_inference_steps"):
+            cached_steps = self.pipeline._cache_dit_num_inference_steps
+            request_steps = req.num_inference_steps or 50  # Default from OmniDiffusionRequest
+            if request_steps != cached_steps:
+                logger.warning(
+                    "num_inference_steps changed from %d to %d after cache-dit was enabled. "
+                    "Continuing with initial configuration (num_inference_steps=%d). "
+                    "This may affect cache-dit performance. "
+                    "To use a different num_inference_steps, please recreate the pipeline with "
+                    "the desired value in cache_config.",
+                    cached_steps,
+                    request_steps,
+                    cached_steps,
+                )
+
         output = self.pipeline.forward(req)
         return output
 
