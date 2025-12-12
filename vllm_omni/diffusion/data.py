@@ -42,6 +42,133 @@ class TransformerConfig:
 
 
 @dataclass
+class DiffusionCacheConfig:
+    """
+    Configuration for cache adapters (TeaCache, cache-dit, etc.).
+    
+    This dataclass provides a unified interface for cache configuration parameters.
+    It can be initialized from a dictionary and accessed via attributes.
+    
+    Common parameters:
+        - TeaCache: rel_l1_thresh, coefficients (optional)
+        - cache-dit: Fn_compute_blocks, Bn_compute_blocks, max_warmup_steps,
+                    residual_diff_threshold, enable_taylorseer, taylorseer_order,
+                    scm_steps_mask_policy, scm_steps_policy
+    
+    Example:
+        >>> # From dict (user-facing API) - partial config uses defaults for missing keys
+        >>> config = DiffusionCacheConfig.from_dict({"rel_l1_thresh": 0.3})
+        >>> # Access via attribute
+        >>> print(config.rel_l1_thresh)  # 0.3 (from dict)
+        >>> print(config.Fn_compute_blocks)  # 8 (default)
+        >>> # Empty dict uses all defaults
+        >>> default_config = DiffusionCacheConfig.from_dict({})
+        >>> print(default_config.rel_l1_thresh)  # 0.2 (default)
+    """
+    
+    # TeaCache parameters [tea_cache only]
+    # Default: 0.2 provides ~1.5x speedup with minimal quality loss (optimal balance)
+    rel_l1_thresh: float = 0.2
+    coefficients: list[float] | None = None  # Uses model-specific defaults if None
+    
+    # cache-dit parameters [cache-dit only]
+    # Default: 8 forward compute blocks for stable L1 difference calculation
+    Fn_compute_blocks: int = 8
+    # Default: 0 backward compute blocks (no fusion by default)
+    Bn_compute_blocks: int = 0
+    # Default: 4 warmup steps for cache-dit
+    max_warmup_steps: int = 4
+    # Default: 0.12 residual difference threshold (balanced performance/quality)
+    residual_diff_threshold: float = 0.12
+    # Default: Enable TaylorSeer for better forecasting
+    enable_taylorseer: bool = True
+    # Default: 1st order TaylorSeer polynomial
+    taylorseer_order: int = 1
+    # Default: "fast" SCM mask policy for good speed/quality balance
+    scm_steps_mask_policy: str = "fast"
+    # Default: "dynamic" steps policy for adaptive caching
+    scm_steps_policy: str = "dynamic"
+    
+    # Additional parameters that may be passed but not explicitly defined
+    _extra_params: dict[str, Any] = field(default_factory=dict, repr=False)
+    
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "DiffusionCacheConfig":
+        """
+        Create DiffusionCacheConfig from a dictionary.
+        
+        Args:
+            data: Dictionary containing cache configuration parameters
+            
+        Returns:
+            DiffusionCacheConfig instance with parameters set from dict
+        """
+        if not isinstance(data, dict):
+            raise TypeError(f"Expected cache config dict, got {type(data)!r}")
+        
+        # Known fields that are explicitly defined in the dataclass
+        known_fields = {
+            "rel_l1_thresh", "coefficients",
+            "Fn_compute_blocks", "Bn_compute_blocks", "max_warmup_steps",
+            "residual_diff_threshold", "enable_taylorseer", "taylorseer_order",
+            "scm_steps_mask_policy", "scm_steps_policy"
+        }
+        
+        # Extract known parameters (only include if they're in the dict, so defaults are used otherwise)
+        known_params = {k: v for k, v in data.items() if k in known_fields}
+        
+        # Store extra parameters
+        extra_params = {k: v for k, v in data.items() if k not in known_fields and k != "model_type"}
+        
+        # Create instance with known params (missing ones will use defaults)
+        # Then update _extra_params after creation since it's a private field
+        instance = cls(**known_params, _extra_params=extra_params)
+        return instance
+    
+    def __getattr__(self, item: str) -> Any:
+        """
+        Allow access to extra parameters via attribute access.
+        
+        This enables accessing parameters that weren't explicitly defined
+        in the dataclass fields but were passed in the dict.
+        """
+        if item == "_extra_params" or item.startswith("_"):
+            return object.__getattribute__(self, item)
+        
+        extra = object.__getattribute__(self, "_extra_params")
+        if item in extra:
+            return extra[item]
+        
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{item}'")
+    
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Convert DiffusionCacheConfig back to dictionary.
+        
+        Returns:
+            Dictionary containing all configuration parameters (including defaults)
+        """
+        result = {}
+        
+        # Add all defined fields (including defaults)
+        for field_name in [
+            "rel_l1_thresh", "coefficients",
+            "Fn_compute_blocks", "Bn_compute_blocks", "max_warmup_steps",
+            "residual_diff_threshold", "enable_taylorseer", "taylorseer_order",
+            "scm_steps_mask_policy", "scm_steps_policy"
+        ]:
+            value = getattr(self, field_name, None)
+            # Include all values except None (None means use default behavior)
+            if value is not None:
+                result[field_name] = value
+        
+        # Add extra parameters
+        result.update(self._extra_params)
+        
+        return result
+
+
+@dataclass
 class OmniDiffusionConfig:
     # Model and path configuration (for convenience)
     model: str
@@ -66,7 +193,7 @@ class OmniDiffusionConfig:
 
     # Cache adapter configuration (NEW)
     cache_adapter: str = "none"  # "tea_cache", "deep_cache", etc.
-    cache_config: dict[str, Any] = field(default_factory=dict)
+    cache_config: DiffusionCacheConfig | dict[str, Any] = field(default_factory=dict)
 
     # Distributed executor backend
     distributed_executor_backend: str = "mp"
@@ -212,6 +339,13 @@ class OmniDiffusionConfig:
         # TODO: remove hard code
         initial_master_port = (self.master_port or 30005) + random.randint(0, 100)
         self.master_port = self.settle_port(initial_master_port, 37)
+        
+        # Convert cache_config dict to DiffusionCacheConfig if needed
+        if isinstance(self.cache_config, dict):
+            self.cache_config = DiffusionCacheConfig.from_dict(self.cache_config)
+        elif not isinstance(self.cache_config, DiffusionCacheConfig):
+            # If it's neither dict nor DiffusionCacheConfig, convert to empty config
+            self.cache_config = DiffusionCacheConfig()
 
     @classmethod
     def from_kwargs(cls, **kwargs: Any) -> "OmniDiffusionConfig":

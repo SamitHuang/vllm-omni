@@ -14,6 +14,8 @@ from typing import Any
 
 import torch
 
+from vllm_omni.diffusion.data import DiffusionCacheConfig
+
 
 class CacheAdapter(ABC):
     """
@@ -24,15 +26,15 @@ class CacheAdapter(ABC):
     apply() and reset() methods to manage cache lifecycle.
 
     Attributes:
-        config: Dictionary containing cache-specific configuration parameters
+        config: DiffusionCacheConfig instance containing cache-specific configuration parameters
     """
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: DiffusionCacheConfig):
         """
         Initialize cache adapter with configuration.
 
         Args:
-            config: Cache-specific configuration dictionary
+            config: DiffusionCacheConfig instance with cache-specific parameters
         """
         self.config = config
 

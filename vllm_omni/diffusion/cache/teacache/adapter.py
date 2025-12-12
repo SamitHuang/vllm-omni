@@ -33,18 +33,20 @@ class TeaCacheAdapter(CacheAdapter):
     forward pass and implement the caching logic transparently.
 
     Example:
-        >>> adapter = TeaCacheAdapter({"rel_l1_thresh": 0.2})
+        >>> from vllm_omni.diffusion.data import DiffusionCacheConfig
+        >>> adapter = TeaCacheAdapter(DiffusionCacheConfig(rel_l1_thresh=0.2))
         >>> adapter.apply(pipeline)
         >>> # Generate with cache enabled
         >>> adapter.reset(pipeline.transformer)  # Reset before each generation
+        >>> # Access config attributes: adapter.config.rel_l1_thresh
     """
 
     def apply(self, pipeline: Any) -> None:
         """
         Apply TeaCache to transformer using hooks.
 
-        This creates a TeaCacheConfig from the adapter's config dict and
-        applies the TeaCache hook to the transformer.
+        This creates a TeaCacheConfig from the adapter's DiffusionCacheConfig
+        and applies the TeaCache hook to the transformer.
 
         Args:
             pipeline: Diffusion pipeline instance. Extracts transformer and model_type:
@@ -55,12 +57,15 @@ class TeaCacheAdapter(CacheAdapter):
         transformer = pipeline.transformer
         model_type = pipeline.__class__.__name__
 
-        # Remove model_type from config if present (shouldn't be there anymore)
-        config_without_model_type = {k: v for k, v in self.config.items() if k != "model_type"}
-
-        # Create TeaCacheConfig from dict with model_type
+        # Create TeaCacheConfig from DiffusionCacheConfig with model_type
+        # Access parameters via attribute access: config.rel_l1_thresh
+        # rel_l1_thresh already has a default value of 0.2 in DiffusionCacheConfig
         try:
-            teacache_config = TeaCacheConfig(model_type=model_type, **config_without_model_type)
+            teacache_config = TeaCacheConfig(
+                model_type=model_type,
+                rel_l1_thresh=self.config.rel_l1_thresh,
+                coefficients=self.config.coefficients,
+            )
         except Exception as e:
             logger.error(f"Failed to create TeaCacheConfig: {e}")
             raise ValueError(

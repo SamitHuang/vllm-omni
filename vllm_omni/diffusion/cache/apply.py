@@ -16,6 +16,7 @@ from vllm.logger import init_logger
 
 from vllm_omni.diffusion.cache.base import CacheAdapter
 from vllm_omni.diffusion.cache.registry import get_cache_adapter
+from vllm_omni.diffusion.data import DiffusionCacheConfig
 
 logger = init_logger(__name__)
 
@@ -40,12 +41,13 @@ def setup_cache(
             - "none": No caching (default)
             - "tea_cache": TeaCache adaptive caching
             - Additional types can be registered via register_cache_adapter()
-        cache_config: Cache-specific configuration dictionary. Contents depend
+        cache_config: DiffusionCacheConfig instance or dictionary. Contents depend
             on cache type:
-            - For "tea_cache": {"rel_l1_thresh": 0.2}
+            - For "tea_cache": {"rel_l1_thresh": 0.2} or DiffusionCacheConfig(rel_l1_thresh=0.2)
             - For other types: see their respective adapter documentation
             Note: model_type is automatically extracted from pipeline and should
-            not be included in cache_config.
+            not be included in cache_config. If dict is provided, it will be converted
+            to DiffusionCacheConfig automatically.
 
     Returns:
         CacheAdapter instance for state management, or None if cache_type="none"
@@ -68,8 +70,9 @@ def setup_cache(
         return None
 
     # Get adapter instance from registry
+    # Convert None to empty dict, get_cache_adapter will convert dict to DiffusionCacheConfig
     try:
-        adapter = get_cache_adapter(cache_type, cache_config or {})
+        adapter = get_cache_adapter(cache_type, cache_config if cache_config is not None else {})
     except ValueError as e:
         logger.error(f"Failed to get cache adapter: {e}")
         raise

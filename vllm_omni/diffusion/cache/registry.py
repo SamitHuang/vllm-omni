@@ -14,6 +14,7 @@ from typing import Any
 from vllm.logger import init_logger
 
 from vllm_omni.diffusion.cache.base import CacheAdapter
+from vllm_omni.diffusion.data import DiffusionCacheConfig
 
 logger = init_logger(__name__)
 
@@ -53,7 +54,7 @@ def register_cache_adapter(cache_type: CacheType, adapter_class: type[CacheAdapt
     logger.debug(f"Registered cache adapter: {cache_type.value} -> {adapter_class.__name__}")
 
 
-def get_cache_adapter(cache_type: str, config: dict[str, Any]) -> CacheAdapter:
+def get_cache_adapter(cache_type: str, config: DiffusionCacheConfig | dict[str, Any]) -> CacheAdapter:
     """
     Factory function to get cache adapter instance.
 
@@ -62,7 +63,8 @@ def get_cache_adapter(cache_type: str, config: dict[str, Any]) -> CacheAdapter:
 
     Args:
         cache_type: String name of cache type ("tea_cache", "deep_cache", etc.)
-        config: Configuration dictionary to pass to adapter constructor
+        config: DiffusionCacheConfig instance or dictionary to pass to adapter constructor.
+                If dict, will be converted to DiffusionCacheConfig.
 
     Returns:
         Instantiated CacheAdapter subclass
@@ -71,7 +73,7 @@ def get_cache_adapter(cache_type: str, config: dict[str, Any]) -> CacheAdapter:
         ValueError: If cache_type is unknown or not registered
 
     Example:
-        >>> adapter = get_cache_adapter("tea_cache", {"rel_l1_thresh": 0.2})
+        >>> adapter = get_cache_adapter("tea_cache", DiffusionCacheConfig(rel_l1_thresh=0.2))
         >>> adapter.apply(pipeline)
     """
     # Normalize cache type string
@@ -95,6 +97,10 @@ def get_cache_adapter(cache_type: str, config: dict[str, Any]) -> CacheAdapter:
         )
 
     adapter_class = CACHE_ADAPTER_REGISTRY[cache_enum]
+
+    # Convert dict to DiffusionCacheConfig if needed
+    if isinstance(config, dict):
+        config = DiffusionCacheConfig.from_dict(config)
 
     # Instantiate and return
     return adapter_class(config)
