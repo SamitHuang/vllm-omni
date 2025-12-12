@@ -15,6 +15,7 @@ from vllm.distributed.parallel_state import (
 from vllm.logger import init_logger
 from vllm.utils import DeviceMemoryProfiler, GiB_bytes
 
+from vllm_omni.diffusion.cache.selector import get_cache_backend
 from vllm_omni.diffusion.data import (
     SHUTDOWN_MESSAGE,
     DiffusionOutput,
@@ -22,7 +23,6 @@ from vllm_omni.diffusion.data import (
 )
 from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineLoader
 from vllm_omni.diffusion.request import OmniDiffusionRequest
-from vllm_omni.diffusion.cache.selector import get_cache_backend
 
 logger = init_logger(__name__)
 
@@ -78,11 +78,6 @@ class GPUWorker:
             )
         time_after_load = time.perf_counter()
 
-        # Enable cache-dit if configured. It must be called after pipeline is loaded.
-        self.cache_backend = get_cache_backend(self.od_config.cache_backend, self.od_config.cache_config)
-        if self.cache_backend is not None:
-            self.cache_backend.enable(self.pipeline)
-
         logger.info(
             "Model loading took %.4f GiB and %.6f seconds",
             m.consumed_memory / GiB_bytes,
@@ -90,19 +85,12 @@ class GPUWorker:
         )
         logger.info(f"Worker {self.rank}: Model loaded successfully.")
 
-        # Apply cache backend (model_type is automatically extracted from pipeline.__class__.__name__)
-        from vllm_omni.diffusion.cache.apply import setup_cache
+        # Setup cache backend based on type (both backends use enable()/reset() interface)
+        self.cache_backend = get_cache_backend(self.od_config.cache_backend, self.od_config.cache_config)
 
-        self.pipeline._cache_backend = setup_cache(
-            self.pipeline,
-            cache_type=self.od_config.cache_backend,
-            cache_config=self.od_config.cache_config,
-        )
-
-    def maybe_reset_cache(self) -> None:
-        """Reset cache state before each generation if applicable."""
-        if self.pipeline._cache_backend is not None:
-            self.pipeline._cache_backend.reset(self.pipeline.transformer)
+        if self.cache_backend is not None:
+            self.cache_backend.enable(self.pipeline)
+            # tea_cache uses enable() method (backend reference is stored on pipeline inside enable())
 
     @torch.inference_mode()
     def execute_model(self, reqs: list[OmniDiffusionRequest], od_config: OmniDiffusionConfig) -> DiffusionOutput:
@@ -113,6 +101,7 @@ class GPUWorker:
         # TODO: dealing with first req for now
         req = reqs[0]
 
+        # Handle cache refresh based on backend type
         if self.cache_backend is not None and self.cache_backend.is_enabled():
             self.cache_backend.refresh(self.pipeline, req.num_inference_steps)
 

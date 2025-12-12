@@ -1,8 +1,8 @@
 from typing import Any
 
-from vllm_omni.diffusion.data import DiffusionCacheConfig
 from vllm_omni.diffusion.cache.cache_dit_backend import CacheDiTBackend
 from vllm_omni.diffusion.cache.teacache.backend import TeaCacheBackend
+from vllm_omni.diffusion.data import DiffusionCacheConfig
 
 
 def get_cache_backend(cache_backend: str | None, cache_config: Any):

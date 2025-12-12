@@ -43,123 +43,168 @@ class TransformerConfig:
 
 @dataclass
 class DiffusionCacheConfig:
-    """Configuration for diffusion model cache acceleration.
+    """
+    Configuration for cache adapters (TeaCache, cache-dit, etc.).
 
-    This dataclass can be initialized from a dictionary for backward compatibility.
+    This dataclass provides a unified interface for cache configuration parameters.
+    It can be initialized from a dictionary and accessed via attributes.
 
-    Default values are optimized for vllm-omni use cases:
-    - Fewer warmup steps (4 vs 8) to support few-step distilled models (e.g., Z-Image with 8 steps)
-    - Higher residual threshold (0.24 vs 0.08) for more aggressive caching, balanced by max_continuous_cached_steps limit
-    - Fewer compute blocks (1 vs 8) for better performance on single-transformer models
-    - TaylorSeer disabled by default as it's not suitable for few-step distilled models
+    Common parameters:
+        - TeaCache: rel_l1_thresh, coefficients (optional)
+        - cache-dit: Fn_compute_blocks, Bn_compute_blocks, max_warmup_steps,
+                    residual_diff_threshold, enable_taylorseer, taylorseer_order,
+                    scm_steps_mask_policy, scm_steps_policy
+
+    Example:
+        >>> # From dict (user-facing API) - partial config uses defaults for missing keys
+        >>> config = DiffusionCacheConfig.from_dict({"rel_l1_thresh": 0.3})
+        >>> # Access via attribute
+        >>> print(config.rel_l1_thresh)  # 0.3 (from dict)
+        >>> print(config.Fn_compute_blocks)  # 8 (default)
+        >>> # Empty dict uses all defaults
+        >>> default_config = DiffusionCacheConfig.from_dict({})
+        >>> print(default_config.rel_l1_thresh)  # 0.2 (default)
     """
 
+    # TeaCache parameters [tea_cache only]
+    # Default: 0.2 provides ~1.5x speedup with minimal quality loss (optimal balance)
+    rel_l1_thresh: float = 0.2
+    coefficients: list[float] | None = None  # Uses model-specific defaults if None
+
+    # cache-dit parameters [cache-dit only]
+    # Default: 1 forward compute block (optimized for single-transformer models)
     # Use 1 as default instead of cache-dit's 8, optimized for single-transformer models
     # This provides better performance while maintaining quality for most use cases
     Fn_compute_blocks: int = 1
+    # Default: 0 backward compute blocks (no fusion by default)
     Bn_compute_blocks: int = 0
+    # Default: 4 warmup steps (optimized for few-step distilled models like Z-Image with 8 steps)
     # Use 4 as default warmup steps instead of 8 in cache-dit, making DBCache work
     # for few-step distilled models (e.g., Z-Image with 8 steps)
     max_warmup_steps: int = 4
+    # Default: -1 (unlimited cached steps) - DBCache disables caching when previous cached steps exceed this value
+    # to prevent precision degradation. Set to -1 for unlimited caching (cache-dit default).
     max_cached_steps: int = -1
-    # Limit consecutive cached steps to 3 to prevent precision degradation
-    # This allows us to use a higher residual_diff_threshold for more aggressive caching
-    max_continuous_cached_steps: int = 3
+    # Default: 0.24 residual difference threshold (higher for more aggressive caching)
     # Use a relatively higher residual diff threshold (0.24) as default to allow more
     # aggressive caching. This is safe because we have max_continuous_cached_steps limit.
     # Without this limit, a lower threshold like 0.12 would be needed.
     residual_diff_threshold: float = 0.24
-    # Used by cache-dit for scm mask generation. If this value changes during inference,
-    # we will re-generate the scm mask and refresh the cache context.
-    num_inference_steps: int | None = None
+    # Default: Limit consecutive cached steps to 3 to prevent precision degradation
+    # This allows us to use a higher residual_diff_threshold for more aggressive caching
+    max_continuous_cached_steps: int = 3
+    # Default: Disable TaylorSeer (not suitable for few-step distilled models)
     # TaylorSeer is not suitable for few-step distilled models, so we disable it by default.
     # References:
     # - From Reusing to Forecasting: Accelerating Diffusion Models with TaylorSeers
-    # - FoCa: Forecast then Calibrate: Feature Caching as ODE for Efficient Diffusion Transformers
+    # - Forecast then Calibrate: Feature Caching as ODE for Efficient Diffusion Transformers
     enable_taylorseer: bool = False
+    # Default: 1st order TaylorSeer polynomial
     taylorseer_order: int = 1
     # Default: "fast" SCM mask policy for good speed/quality balance
     scm_steps_mask_policy: str = "fast"
     # Default: "dynamic" steps policy for adaptive caching
     scm_steps_policy: str = "dynamic"
-    
+    # Used by cache-dit for scm mask generation. If this value changes during inference,
+    # we will re-generate the scm mask and refresh the cache context.
+    num_inference_steps: int | None = None
+
     # Additional parameters that may be passed but not explicitly defined
     _extra_params: dict[str, Any] = field(default_factory=dict, repr=False)
-    
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "DiffusionCacheConfig":
         """
         Create DiffusionCacheConfig from a dictionary.
-        
+
         Args:
             data: Dictionary containing cache configuration parameters
-            
+
         Returns:
             DiffusionCacheConfig instance with parameters set from dict
         """
         if not isinstance(data, dict):
             raise TypeError(f"Expected cache config dict, got {type(data)!r}")
-        
+
         # Known fields that are explicitly defined in the dataclass
         known_fields = {
-            "rel_l1_thresh", "coefficients",
-            "Fn_compute_blocks", "Bn_compute_blocks", "max_warmup_steps",
-            "residual_diff_threshold", "enable_taylorseer", "taylorseer_order",
-            "scm_steps_mask_policy", "scm_steps_policy"
+            "rel_l1_thresh",
+            "coefficients",
+            "Fn_compute_blocks",
+            "Bn_compute_blocks",
+            "max_warmup_steps",
+            "max_cached_steps",
+            "residual_diff_threshold",
+            "max_continuous_cached_steps",
+            "enable_taylorseer",
+            "taylorseer_order",
+            "scm_steps_mask_policy",
+            "scm_steps_policy",
+            "num_inference_steps",
         }
-        
+
         # Extract known parameters (only include if they're in the dict, so defaults are used otherwise)
         known_params = {k: v for k, v in data.items() if k in known_fields}
-        
+
         # Store extra parameters
         extra_params = {k: v for k, v in data.items() if k not in known_fields and k != "model_type"}
-        
+
         # Create instance with known params (missing ones will use defaults)
         # Then update _extra_params after creation since it's a private field
         instance = cls(**known_params, _extra_params=extra_params)
         return instance
-    
+
     def __getattr__(self, item: str) -> Any:
         """
         Allow access to extra parameters via attribute access.
-        
+
         This enables accessing parameters that weren't explicitly defined
         in the dataclass fields but were passed in the dict.
         """
         if item == "_extra_params" or item.startswith("_"):
             return object.__getattribute__(self, item)
-        
+
         extra = object.__getattribute__(self, "_extra_params")
         if item in extra:
             return extra[item]
-        
+
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{item}'")
-    
+
     def to_dict(self) -> dict[str, Any]:
         """
         Convert DiffusionCacheConfig back to dictionary.
-        
+
         Returns:
             Dictionary containing all configuration parameters (including defaults)
         """
         result = {}
-        
+
         # Add all defined fields (including defaults)
         for field_name in [
-            "rel_l1_thresh", "coefficients",
-            "Fn_compute_blocks", "Bn_compute_blocks", "max_warmup_steps",
-            "residual_diff_threshold", "enable_taylorseer", "taylorseer_order",
-            "scm_steps_mask_policy", "scm_steps_policy"
+            "rel_l1_thresh",
+            "coefficients",
+            "Fn_compute_blocks",
+            "Bn_compute_blocks",
+            "max_warmup_steps",
+            "max_cached_steps",
+            "residual_diff_threshold",
+            "max_continuous_cached_steps",
+            "enable_taylorseer",
+            "taylorseer_order",
+            "scm_steps_mask_policy",
+            "scm_steps_policy",
+            "num_inference_steps",
         ]:
             value = getattr(self, field_name, None)
             # Include all values except None (None means use default behavior)
             if value is not None:
                 result[field_name] = value
-        
+
         # Add extra parameters
         result.update(self._extra_params)
-        
+
         return result
+
 
 @dataclass
 class OmniDiffusionConfig:
@@ -332,17 +377,13 @@ class OmniDiffusionConfig:
         # TODO: remove hard code
         initial_master_port = (self.master_port or 30005) + random.randint(0, 100)
         self.master_port = self.settle_port(initial_master_port, 37)
-        
+
         # Convert cache_config dict to DiffusionCacheConfig if needed
         if isinstance(self.cache_config, dict):
             self.cache_config = DiffusionCacheConfig.from_dict(self.cache_config)
         elif not isinstance(self.cache_config, DiffusionCacheConfig):
             # If it's neither dict nor DiffusionCacheConfig, convert to empty config
             self.cache_config = DiffusionCacheConfig()
-
-        # Convert cache_config dict to DiffusionCacheConfig dataclass if needed
-        if isinstance(self.cache_config, dict):
-            self.cache_config = DiffusionCacheConfig.from_dict(self.cache_config)
 
     @classmethod
     def from_kwargs(cls, **kwargs: Any) -> "OmniDiffusionConfig":
