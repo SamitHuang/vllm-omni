@@ -37,7 +37,7 @@ class CacheAdapter(ABC):
         self.config = config
 
     @abstractmethod
-    def apply(self, transformer: torch.nn.Module) -> None:
+    def apply(self, pipeline: Any) -> None:
         """
         Apply cache to transformer using hooks.
 
@@ -46,7 +46,9 @@ class CacheAdapter(ABC):
         initialization.
 
         Args:
-            transformer: Transformer module to apply cache to
+            pipeline: Diffusion pipeline instance. The adapter can extract:
+                     - transformer: via pipeline.transformer
+                     - model_type: via pipeline.__class__.__name__
         """
         raise NotImplementedError("Subclasses must implement apply()")
 

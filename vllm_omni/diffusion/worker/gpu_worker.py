@@ -84,13 +84,11 @@ class GPUWorker:
         )
         logger.info(f"Worker {self.rank}: Model loaded successfully.")
 
-        # Apply cache adapter (model_type is auto-injected in OmniDiffusionConfig.__post_init__)
+        # Apply cache adapter (model_type is automatically extracted from pipeline.__class__.__name__)
         from vllm_omni.diffusion.cache.apply import setup_cache
 
-        self.od_config.cache_config["model_type"] = self.od_config.model_class_name
-
         self.pipeline._cache_adapter = setup_cache(
-            self.pipeline.transformer,
+            self.pipeline,
             cache_type=self.od_config.cache_adapter,
             cache_config=self.od_config.cache_config,
         )

@@ -9,12 +9,14 @@ Enable TeaCache by setting `cache_adapter` to `"tea_cache"`:
 ```python
 from vllm_omni import Omni
 
-# Simple configuration - model_class_name and model_type are auto-detected
+# Simple configuration - model_type is automatically extracted from pipeline.__class__.__name__
 omni = Omni(
     model="Qwen/Qwen-Image",
     cache_adapter="tea_cache",
     cache_config={
         "rel_l1_thresh": 0.2  # Optional, defaults to 0.2
+        # Note: model_type is automatically extracted from the pipeline class name
+        # and should NOT be included in cache_config
     }
 )
 outputs = omni.generate(prompt="A cat sitting on a windowsill", num_inference_steps=50)

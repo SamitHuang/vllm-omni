@@ -213,12 +213,6 @@ class OmniDiffusionConfig:
         initial_master_port = (self.master_port or 30005) + random.randint(0, 100)
         self.master_port = self.settle_port(initial_master_port, 37)
 
-        # Automatically inject model_class_name into cache_config if not present
-        if self.cache_adapter != "none" and self.model_class_name:
-            if "model_type" not in self.cache_config:
-                self.cache_config["model_type"] = self.model_class_name
-                logger.debug(f"Auto-injected model_type='{self.model_class_name}' into cache_config")
-
     @classmethod
     def from_kwargs(cls, **kwargs: Any) -> "OmniDiffusionConfig":
         # Check environment variable as fallback for cache_adapter

@@ -8,6 +8,8 @@ This module provides the TeaCache adapter that implements the CacheAdapter
 interface using the hooks-based TeaCache system.
 """
 
+from typing import Any
+
 import torch
 from vllm.logger import init_logger
 
@@ -32,12 +34,12 @@ class TeaCacheAdapter(CacheAdapter):
 
     Example:
         >>> adapter = TeaCacheAdapter({"rel_l1_thresh": 0.2})
-        >>> adapter.apply(transformer)
+        >>> adapter.apply(pipeline)
         >>> # Generate with cache enabled
-        >>> adapter.reset(transformer)  # Reset before each generation
+        >>> adapter.reset(pipeline.transformer)  # Reset before each generation
     """
 
-    def apply(self, transformer: torch.nn.Module) -> None:
+    def apply(self, pipeline: Any) -> None:
         """
         Apply TeaCache to transformer using hooks.
 
@@ -45,23 +47,26 @@ class TeaCacheAdapter(CacheAdapter):
         applies the TeaCache hook to the transformer.
 
         Args:
-            transformer: Transformer module to apply TeaCache to
+            pipeline: Diffusion pipeline instance. Extracts transformer and model_type:
+                     - transformer: pipeline.transformer
+                     - model_type: pipeline.__class__.__name__
         """
-        # Validate that model_type is provided
-        if "model_type" not in self.config:
-            raise ValueError(
-                "model_type must be provided in cache_config. "
-                "Should be set to OmniDiffusionConfig.model_class_name (e.g., 'QwenImagePipeline')"
-            )
+        # Extract transformer and model_type from pipeline
+        transformer = pipeline.transformer
+        model_type = pipeline.__class__.__name__
 
-        # Create TeaCacheConfig from dict
+        # Remove model_type from config if present (shouldn't be there anymore)
+        config_without_model_type = {k: v for k, v in self.config.items() if k != "model_type"}
+
+        # Create TeaCacheConfig from dict with model_type
         try:
-            teacache_config = TeaCacheConfig(**self.config)
+            teacache_config = TeaCacheConfig(model_type=model_type, **config_without_model_type)
         except Exception as e:
             logger.error(f"Failed to create TeaCacheConfig: {e}")
             raise ValueError(
                 f"Invalid TeaCache configuration: {e}. "
-                f"Expected keys: rel_l1_thresh, model_type (pipeline class name), coefficients (optional)"
+                f"Expected keys: rel_l1_thresh, coefficients (optional). "
+                f"model_type is automatically extracted from pipeline.__class__.__name__."
             )
 
         # Apply hook to transformer

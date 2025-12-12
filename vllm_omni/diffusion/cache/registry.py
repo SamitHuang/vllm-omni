@@ -72,7 +72,7 @@ def get_cache_adapter(cache_type: str, config: dict[str, Any]) -> CacheAdapter:
 
     Example:
         >>> adapter = get_cache_adapter("tea_cache", {"rel_l1_thresh": 0.2})
-        >>> adapter.apply(transformer)
+        >>> adapter.apply(pipeline)
     """
     # Normalize cache type string
     cache_type_str = cache_type.lower().strip()
