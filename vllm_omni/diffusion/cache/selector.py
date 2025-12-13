@@ -1,11 +1,12 @@
 from typing import Any
 
+from vllm_omni.diffusion.cache.base import CacheBackend
 from vllm_omni.diffusion.cache.cache_dit_backend import CacheDiTBackend
 from vllm_omni.diffusion.cache.teacache.backend import TeaCacheBackend
 from vllm_omni.diffusion.data import DiffusionCacheConfig
 
 
-def get_cache_backend(cache_backend: str | None, cache_config: Any):
+def get_cache_backend(cache_backend: str | None, cache_config: Any) -> CacheBackend | None:
     """Get cache backend instance based on cache_backend string.
 
     This is a selector function that routes to the appropriate backend implementation.

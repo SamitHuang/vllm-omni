@@ -115,3 +115,4 @@ class TeaCacheBackend(CacheBackend):
         else:
             if verbose:
                 logger.warning("Transformer has no hook registry, TeaCache may not be applied")
+
