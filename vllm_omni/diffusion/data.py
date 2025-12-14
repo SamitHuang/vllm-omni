@@ -170,41 +170,6 @@ class DiffusionCacheConfig:
 
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{item}'")
 
-    def to_dict(self) -> dict[str, Any]:
-        """
-        Convert DiffusionCacheConfig back to dictionary.
-
-        Returns:
-            Dictionary containing all configuration parameters (including defaults)
-        """
-        result = {}
-
-        # Add all defined fields (including defaults)
-        for field_name in [
-            "rel_l1_thresh",
-            "coefficients",
-            "Fn_compute_blocks",
-            "Bn_compute_blocks",
-            "max_warmup_steps",
-            "max_cached_steps",
-            "residual_diff_threshold",
-            "max_continuous_cached_steps",
-            "enable_taylorseer",
-            "taylorseer_order",
-            "scm_steps_mask_policy",
-            "scm_steps_policy",
-            "num_inference_steps",
-        ]:
-            value = getattr(self, field_name, None)
-            # Include all values except None (None means use default behavior)
-            if value is not None:
-                result[field_name] = value
-
-        # Add extra parameters
-        result.update(self._extra_params)
-
-        return result
-
 
 @dataclass
 class OmniDiffusionConfig:
