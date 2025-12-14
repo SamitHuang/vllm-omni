@@ -39,12 +39,12 @@ The following benchmarks were measured on **Qwen/Qwen-Image** model generating i
 
 !!! note "Benchmark Disclaimer"
     These benchmarks are provided for **general reference only**. The configurations shown use default or common parameter settings and have not been exhaustively optimized for maximum performance. Actual performance may vary based on:
-    
+
     - Specific model and use case
     - Hardware configuration
     - Careful parameter tuning
     - Different inference settings (e.g., number of steps, image resolution)
-    
+
     For optimal performance in your specific scenario, we recommend experimenting with different parameter configurations as described in the detailed guides below.
 
 | Configuration | Generation Time | Speedup | Notes |
@@ -97,4 +97,3 @@ For detailed information on each acceleration method:
 
 - **[TeaCache Guide](teacache.md)** - Complete TeaCache documentation, configuration options, and best practices
 - **[Cache-DiT Acceleration Guide](cache_dit_acceleration.md)** - Comprehensive Cache-DiT guide covering DBCache, TaylorSeer, SCM, and configuration parameters
-
