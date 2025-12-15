@@ -2,8 +2,8 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import functools
-from math import prod
 from collections.abc import Iterable
+from math import prod
 from typing import Any, Optional, Union
 
 import torch
@@ -630,7 +630,6 @@ class QwenImageTransformer2DModel(nn.Module):
             )
         else:
             modulate_index = None
-
 
         encoder_hidden_states = self.txt_norm(encoder_hidden_states)
         encoder_hidden_states = self.txt_in(encoder_hidden_states)
