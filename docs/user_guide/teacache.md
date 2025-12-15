@@ -15,8 +15,6 @@ omni = Omni(
     cache_backend="tea_cache",
     cache_config={
         "rel_l1_thresh": 0.2  # Optional, defaults to 0.2
-        # Note: model_type is automatically extracted from the pipeline class name
-        # and should NOT be included in cache_config
     }
 )
 outputs = omni.generate(prompt="A cat sitting on a windowsill", num_inference_steps=50)

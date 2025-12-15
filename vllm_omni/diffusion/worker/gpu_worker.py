@@ -90,7 +90,6 @@ class GPUWorker:
 
         if self.cache_backend is not None:
             self.cache_backend.enable(self.pipeline)
-            # tea_cache uses enable() method (backend reference is stored on pipeline inside enable())
 
     @torch.inference_mode()
     def execute_model(self, reqs: list[OmniDiffusionRequest], od_config: OmniDiffusionConfig) -> DiffusionOutput:
@@ -101,7 +100,7 @@ class GPUWorker:
         # TODO: dealing with first req for now
         req = reqs[0]
 
-        # Handle cache refresh based on backend type
+        # Refresh cache context if needed
         if self.cache_backend is not None and self.cache_backend.is_enabled():
             self.cache_backend.refresh(self.pipeline, req.num_inference_steps)
 
