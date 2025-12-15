@@ -14,10 +14,10 @@ This module tests the cache backend implementations:
 from unittest.mock import Mock, patch
 
 import pytest
+
 from vllm_omni.diffusion.cache.cache_dit_backend import (
     CacheDiTBackend,
 )
-
 from vllm_omni.diffusion.cache.selector import get_cache_backend
 from vllm_omni.diffusion.cache.teacache.backend import TeaCacheBackend
 from vllm_omni.diffusion.data import DiffusionCacheConfig

@@ -4,7 +4,7 @@
 import enum
 import os
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Any, Callable
 
 import torch
@@ -126,28 +126,14 @@ class DiffusionCacheConfig:
         if not isinstance(data, dict):
             raise TypeError(f"Expected cache config dict, got {type(data)!r}")
 
-        # Known fields that are explicitly defined in the dataclass
-        known_fields = {
-            "rel_l1_thresh",
-            "coefficients",
-            "Fn_compute_blocks",
-            "Bn_compute_blocks",
-            "max_warmup_steps",
-            "max_cached_steps",
-            "residual_diff_threshold",
-            "max_continuous_cached_steps",
-            "enable_taylorseer",
-            "taylorseer_order",
-            "scm_steps_mask_policy",
-            "scm_steps_policy",
-            "num_inference_steps",
-        }
+        # Get all dataclass field names automatically
+        field_names = {f.name for f in fields(cls)}
 
-        # Extract known parameters (only include if they're in the dict, so defaults are used otherwise)
-        known_params = {k: v for k, v in data.items() if k in known_fields}
+        # Extract parameters that match dataclass fields (excluding private fields)
+        known_params = {k: v for k, v in data.items() if k in field_names and not k.startswith("_")}
 
         # Store extra parameters
-        extra_params = {k: v for k, v in data.items() if k not in known_fields and k != "model_type"}
+        extra_params = {k: v for k, v in data.items() if k not in field_names}
 
         # Create instance with known params (missing ones will use defaults)
         # Then update _extra_params after creation since it's a private field
