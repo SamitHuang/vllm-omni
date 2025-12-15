@@ -276,6 +276,7 @@ CUSTOM_DIT_ENABLERS.update(
     }
 )
 
+
 class CacheDiTBackend(CacheBackend):
     """Backend class for cache-dit acceleration on diffusion pipelines.
 
@@ -308,7 +309,7 @@ class CacheDiTBackend(CacheBackend):
 
         # Initialize base class with normalized config
         super().__init__(config)
-        
+
         # Cache-dit specific attributes
         self._refresh_func: Optional[Callable[[Any, int, bool], None]] = None
         self._last_num_inference_steps: Optional[int] = None
@@ -391,4 +392,3 @@ def may_enable_cache_dit(pipeline: Any, od_config: OmniDiffusionConfig) -> Optio
     backend = CacheDiTBackend(od_config.cache_config)
     backend.enable(pipeline)
     return backend if backend.is_enabled() else None
-
