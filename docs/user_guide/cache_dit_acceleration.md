@@ -14,7 +14,7 @@ Cache-dit is a library that accelerates diffusion transformer models through int
 
 ### Basic Usage
 
-Enable cache-dit acceleration by simply setting `cache_adapter="cache-dit"`. Cache-dit will use its recommended default parameters:
+Enable cache-dit acceleration by simply setting `cache_backend="cache_dit"`. Cache-dit will use its recommended default parameters:
 
 ```python
 from vllm_omni.entrypoints.omni import Omni
@@ -22,7 +22,7 @@ from vllm_omni.entrypoints.omni import Omni
 # Simplest way: just enable cache-dit with default parameters
 omni = Omni(
     model="Qwen/Qwen-Image",
-    cache_adapter="cache-dit",
+    cache_backend="cache_dit",
 )
 
 images = omni.generate(
@@ -45,7 +45,7 @@ To customize cache-dit settings, provide a `cache_config` dictionary, for exampl
 ```python
 omni = Omni(
     model="Qwen/Qwen-Image",
-    cache_adapter="cache-dit",
+    cache_backend="cache_dit",
     cache_config={
         "Fn_compute_blocks": 1,
         "Bn_compute_blocks": 0,
@@ -73,7 +73,7 @@ The `--enable_cache_dit` flag enables cache-dit acceleration with these customiz
 ```python
 omni = Omni(
     ...
-    cache_adapter="cache-dit" if args.enable_cache_dit else None,
+    cache_backend="cache_dit" if args.enable_cache_dit else None,
     cache_config={
         # Scheme: Hybrid DBCache + SCM + TaylorSeer
         # DBCache
@@ -186,7 +186,7 @@ cache_config={
 ```python
 omni = Omni(
     model="Qwen/Qwen-Image",
-    cache_adapter="cache-dit",
+    cache_backend="cache_dit",
     cache_config={
         "Fn_compute_blocks": 8,
         "Bn_compute_blocks": 0,
@@ -201,7 +201,7 @@ omni = Omni(
 ```python
 omni = Omni(
     model="Qwen/Qwen-Image",
-    cache_adapter="cache-dit",
+    cache_backend="cache_dit",
     cache_config={
         # DBCache
         "Fn_compute_blocks": 8,
@@ -220,7 +220,7 @@ omni = Omni(
 ```python
 omni = Omni(
     model="Qwen/Qwen-Image",
-    cache_adapter="cache-dit",
+    cache_backend="cache_dit",
     cache_config={
         # DBCache
         "Fn_compute_blocks": 8,
@@ -239,7 +239,7 @@ omni = Omni(
 ```python
 omni = Omni(
     model="Qwen/Qwen-Image",
-    cache_adapter="cache-dit",
+    cache_backend="cache_dit",
     cache_config={
         # DBCache
         "Fn_compute_blocks": 8,
@@ -300,7 +300,7 @@ No manual intervention is required - the refresh happens automatically and effic
 The easiest way to get started is to enable cache-dit without any configuration:
 
 ```python
-omni = Omni(model="Qwen/Qwen-Image", cache_adapter="cache-dit")
+omni = Omni(model="Qwen/Qwen-Image", cache_backend="cache_dit")
 ```
 
 This uses cache-dit's recommended defaults (`Fn_compute_blocks=8`). Once you understand the baseline performance, you can customize the configuration to add other acceleration methods or fine-tune parameters.
