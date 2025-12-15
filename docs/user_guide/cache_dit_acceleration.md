@@ -116,7 +116,8 @@ SCM allows you to specify which steps must be computed and which can use cached 
 
 **Key Parameters**:
 
-- `scm_steps_mask_policy` (str | None, default: "fast"): Predefined mask policy. Options:
+- `scm_steps_mask_policy` (str | None, default: None): Predefined mask policy. Options:
+  - `None`: SCM disabled (default)
   - `"slow"`: More compute steps, higher quality (18 compute steps out of 28)
   - `"medium"`: Balanced (15 compute steps out of 28)
   - `"fast"`: More cache steps, faster inference (11 compute steps out of 28)
@@ -136,6 +137,7 @@ cache_config={
 
 **Performance Tips**:
 
+- SCM is disabled by default (`scm_steps_mask_policy=None`). Enable it by setting a policy value if you need additional acceleration
 - Start with `"medium"` policy and adjust based on quality requirements
 - Use `"fast"` or `"ultra"` for maximum speed when quality can be slightly compromised
 - `"dynamic"` policy generally provides better quality than `"static"`
@@ -156,7 +158,7 @@ cache_config={
 | `num_inference_steps` | int \| None | None | Initial inference steps for SCM mask generation (optional, auto-refreshed during inference) |
 | `enable_taylorseer` | bool | False | Enable TaylorSeer acceleration (not suitable for few-step distilled models) |
 | `taylorseer_order` | int | 1 | Taylor expansion order |
-| `scm_steps_mask_policy` | str \| None | "fast" | SCM mask policy ("slow", "medium", "fast", "ultra") |
+| `scm_steps_mask_policy` | str \| None | None | SCM mask policy (None, "slow", "medium", "fast", "ultra") |
 | `scm_steps_policy` | str | "dynamic" | SCM computation policy ("dynamic" or "static") |
 
 ## Example: Accelerate Text-to-Image Generation with CacheDiT
@@ -191,7 +193,7 @@ omni = Omni(
         "enable_taylorseer": True,
         "taylorseer_order": 1,
         # SCM
-        "scm_steps_mask_policy": "fast",
+        "scm_steps_mask_policy": "fast",  # Set to None to disable SCM
         "scm_steps_policy": "dynamic",
     },
 )
