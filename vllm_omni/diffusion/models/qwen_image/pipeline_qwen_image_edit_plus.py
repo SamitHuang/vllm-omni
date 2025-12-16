@@ -1,10 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-import inspect
 import json
 import logging
-import math
 import os
 from collections.abc import Iterable
 from typing import Any, Optional, Union
@@ -28,6 +26,11 @@ from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig
 from vllm_omni.diffusion.distributed.utils import get_local_device
 from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineLoader
 from vllm_omni.diffusion.models.qwen_image.pipeline_qwen_image import calculate_shift
+from vllm_omni.diffusion.models.qwen_image.pipeline_qwen_image_edit import (
+    calculate_dimensions,
+    retrieve_timesteps,
+    retrieve_latents,
+)
 from vllm_omni.diffusion.models.qwen_image.qwen_image_transformer import (
     QwenImageTransformer2DModel,
 )
@@ -148,71 +151,6 @@ def get_qwen_image_edit_plus_post_process_func(
     return post_process_func
 
 
-def calculate_dimensions(target_area: float, ratio: float):
-    """Calculate width and height from target area and aspect ratio."""
-    width = math.sqrt(target_area * ratio)
-    height = width / ratio
-
-    width = round(width / 32) * 32
-    height = round(height / 32) * 32
-
-    return width, height
-
-
-def retrieve_timesteps(
-    scheduler,
-    num_inference_steps: Optional[int] = None,
-    device: Optional[Union[str, torch.device]] = None,
-    timesteps: Optional[list[int]] = None,
-    sigmas: Optional[list[float]] = None,
-    **kwargs,
-) -> tuple[torch.Tensor, int]:
-    r"""
-    Calls the scheduler's `set_timesteps` method and retrieves timesteps from the scheduler after the call. Handles
-    custom timesteps. Any kwargs will be supplied to `scheduler.set_timesteps`.
-    """
-    if timesteps is not None and sigmas is not None:
-        raise ValueError("Only one of `timesteps` or `sigmas` can be passed. Please choose one to set custom values")
-    if timesteps is not None:
-        accepts_timesteps = "timesteps" in set(inspect.signature(scheduler.set_timesteps).parameters.keys())
-        if not accepts_timesteps:
-            raise ValueError(
-                f"The current scheduler class {scheduler.__class__}'s `set_timesteps` does not support custom"
-                f" timestep schedules. Please check whether you are using the correct scheduler."
-            )
-        scheduler.set_timesteps(timesteps=timesteps, device=device, **kwargs)
-        timesteps = scheduler.timesteps
-        num_inference_steps = len(timesteps)
-    elif sigmas is not None:
-        accept_sigmas = "sigmas" in set(inspect.signature(scheduler.set_timesteps).parameters.keys())
-        if not accept_sigmas:
-            raise ValueError(
-                f"The current scheduler class {scheduler.__class__}'s `set_timesteps` does not support custom"
-                f" sigmas schedules. Please check whether you are using the correct scheduler."
-            )
-        scheduler.set_timesteps(sigmas=sigmas, device=device, **kwargs)
-        timesteps = scheduler.timesteps
-        num_inference_steps = len(timesteps)
-    else:
-        scheduler.set_timesteps(num_inference_steps, device=device, **kwargs)
-        timesteps = scheduler.timesteps
-    return timesteps, num_inference_steps
-
-
-def retrieve_latents(
-    encoder_output: torch.Tensor, generator: Optional[torch.Generator] = None, sample_mode: str = "argmax"
-):
-    """Retrieve latents from VAE encoder output."""
-    if hasattr(encoder_output, "latent_dist"):
-        return (
-            encoder_output.latent_dist.mode()
-            if sample_mode == "argmax"
-            else encoder_output.latent_dist.sample(generator)
-        )
-    elif hasattr(encoder_output, "latents"):
-        return encoder_output.latents
-    else:
-        raise AttributeError("Could not access latents of provided encoder_output")
 
 
 class QwenImageEditPlusPipeline(
