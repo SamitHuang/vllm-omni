@@ -4,10 +4,18 @@
 """
 Example script for image editing with Qwen-Image-Edit.
 
-Usage:
+Usage (single image):
     python image_edit.py \
         --image input.png \
         --prompt "Let this mascot dance under the moon, surrounded by floating stars and poetic bubbles such as 'Be Kind'" \
+        --output output_image_edit.png \
+        --num_inference_steps 50 \
+        --cfg_scale 4.0
+
+Usage (multiple images):
+    python image_edit.py \
+        --image input1.png input2.png input3.png \
+        --prompt "Combine these images into a single scene" \
         --output output_image_edit.png \
         --num_inference_steps 50 \
         --cfg_scale 4.0
@@ -38,8 +46,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--image",
         type=str,
+        nargs="+",
         required=True,
-        help="Path to input image file (PNG, JPG, etc.).",
+        help="Path(s) to input image file(s) (PNG, JPG, etc.). Can specify multiple images.",
     )
     parser.add_argument(
         "--prompt",
@@ -100,13 +109,24 @@ def parse_args() -> argparse.Namespace:
 def main():
     args = parse_args()
 
-    # Validate input image exists
-    if not os.path.exists(args.image):
-        raise FileNotFoundError(f"Input image not found: {args.image}")
-
-    # Load input image
-    input_image = Image.open(args.image).convert("RGB")
-    print(f"Loaded input image from {args.image} (size: {input_image.size})")
+    # Validate input images exist and load them
+    input_images = []
+    for image_path in args.image:
+        if not os.path.exists(image_path):
+            raise FileNotFoundError(f"Input image not found: {image_path}")
+        img = Image.open(image_path).convert("RGB")
+        input_images.append(img)
+        print(f"Loaded input image from {image_path} (size: {img.size})")
+    
+    # Use single image or list based on number of inputs
+    if len(input_images) == 1:
+        input_image = input_images[0]
+        print(f"\nUsing single image input (size: {input_image.size})")
+    else:
+        input_image = input_images
+        print(f"\nUsing {len(input_images)} image inputs")
+        for idx, img in enumerate(input_images):
+            print(f"  Image {idx + 1}: size {img.size}")
 
     device = detect_device_type()
     generator = torch.Generator(device=device).manual_seed(args.seed)
@@ -137,10 +157,20 @@ def main():
     elif args.cache_backend == "tea_cache":
         raise ValueError("TeaCache is not supported for image-to-image generation.")
 
-    # Initialize Omni with QwenImageEditPipeline
+    # Choose pipeline based on number of images
+    # QwenImageEditPlusPipeline supports multiple images with proper prompt template
+    # QwenImageEditPipeline is for single image editing
+    if isinstance(input_image, list) and len(input_image) > 1:
+        model_class_name = "QwenImageEditPlusPipeline"
+        print(f"Using QwenImageEditPlusPipeline for {len(input_image)} input images")
+    else:
+        model_class_name = "QwenImageEditPipeline"
+        print("Using QwenImageEditPipeline for single image editing")
+    
+    # Initialize Omni with appropriate pipeline
     omni = Omni(
         model=args.model,
-        model_class_name="QwenImageEditPipeline",
+        model_class_name=model_class_name,
         vae_use_slicing=vae_use_slicing,
         vae_use_tiling=vae_use_tiling,
         cache_backend=args.cache_backend,
@@ -154,7 +184,12 @@ def main():
     print(f"  Model: {args.model}")
     print(f"  Inference steps: {args.num_inference_steps}")
     print(f"  Cache backend: {args.cache_backend if args.cache_backend else 'None (no acceleration)'}")
-    print(f"  Input image size: {input_image.size}")
+    if isinstance(input_image, list):
+        print(f"  Number of input images: {len(input_image)}")
+        for idx, img in enumerate(input_image):
+            print(f"    Image {idx + 1} size: {img.size}")
+    else:
+        print(f"  Input image size: {input_image.size}")
     print(f"{'=' * 60}\n")
 
     generation_start = time.perf_counter()
