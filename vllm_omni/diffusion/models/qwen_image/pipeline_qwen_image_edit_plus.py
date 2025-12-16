@@ -5,7 +5,7 @@ import json
 import logging
 import os
 from collections.abc import Iterable
-from typing import Any, Optional, Union
+from typing import Any
 
 import numpy as np
 import PIL.Image
@@ -274,9 +274,9 @@ class QwenImageEditPlusPipeline(
 
     def _get_qwen_prompt_embeds(
         self,
-        prompt: Union[str, list[str]] = None,
-        image: Optional[Union[list[torch.Tensor], torch.Tensor]] = None,
-        dtype: Optional[torch.dtype] = None,
+        prompt: str | list[str] = None,
+        image: list[torch.Tensor] | torch.Tensor | None = None,
+        dtype: torch.dtype | None = None,
     ):
         """Get prompt embeddings with support for multiple images."""
         dtype = dtype or self.text_encoder.dtype
@@ -332,11 +332,11 @@ class QwenImageEditPlusPipeline(
 
     def encode_prompt(
         self,
-        prompt: Union[str, list[str]],
-        image: Optional[Union[list[torch.Tensor], torch.Tensor]] = None,
+        prompt: str | list[str],
+        image: list[torch.Tensor] | torch.Tensor | None = None,
         num_images_per_prompt: int = 1,
-        prompt_embeds: Optional[torch.Tensor] = None,
-        prompt_embeds_mask: Optional[torch.Tensor] = None,
+        prompt_embeds: torch.Tensor | None = None,
+        prompt_embeds_mask: torch.Tensor | None = None,
         max_sequence_length: int = 1024,
     ):
         r"""
@@ -580,24 +580,24 @@ class QwenImageEditPlusPipeline(
     def forward(
         self,
         req: OmniDiffusionRequest,
-        prompt: Union[str, list[str]] = "",
-        negative_prompt: Union[str, list[str]] = "",
-        image: Optional[Union[PIL.Image.Image, list[PIL.Image.Image], torch.Tensor]] = None,
+        prompt: str | list[str] = "",
+        negative_prompt: str | list[str] = "",
+        image: PIL.Image.Image | list[PIL.Image.Image] | torch.Tensor | None = None,
         true_cfg_scale: float = 4.0,
         height: int | None = None,
         width: int | None = None,
         num_inference_steps: int = 50,
-        sigmas: Optional[list[float]] = None,
+        sigmas: list[float] | None = None,
         guidance_scale: float = 1.0,
         num_images_per_prompt: int = 1,
-        generator: Optional[Union[torch.Generator, list[torch.Generator]]] = None,
-        latents: Optional[torch.Tensor] = None,
-        prompt_embeds: Optional[torch.Tensor] = None,
-        prompt_embeds_mask: Optional[torch.Tensor] = None,
-        negative_prompt_embeds: Optional[torch.Tensor] = None,
-        negative_prompt_embeds_mask: Optional[torch.Tensor] = None,
-        output_type: Optional[str] = "pil",
-        attention_kwargs: Optional[dict[str, Any]] = None,
+        generator: torch.Generator | list[torch.Generator] | None = None,
+        latents: torch.Tensor | None = None,
+        prompt_embeds: torch.Tensor | None = None,
+        prompt_embeds_mask: torch.Tensor | None = None,
+        negative_prompt_embeds: torch.Tensor | None = None,
+        negative_prompt_embeds_mask: torch.Tensor | None = None,
+        output_type: str | None = "pil",
+        attention_kwargs: dict[str, Any] | None = None,
         callback_on_step_end_tensor_inputs: list[str] = ["latents"],
         max_sequence_length: int = 512,
     ) -> DiffusionOutput:
