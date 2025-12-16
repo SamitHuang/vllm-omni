@@ -41,7 +41,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model",
         default="Qwen/Qwen-Image-Edit",
-        help="Diffusion model name or local path.",
+        help=(
+            "Diffusion model name or local path. "
+            "For multiple image inputs, use Qwen/Qwen-Image-Edit-2509 or later version "
+            "which supports QwenImageEditPlusPipeline."
+        ),
     )
     parser.add_argument(
         "--image",
@@ -127,6 +131,15 @@ def main():
         print(f"\nUsing {len(input_images)} image inputs")
         for idx, img in enumerate(input_images):
             print(f"  Image {idx + 1}: size {img.size}")
+    
+    if len(input_images) > 1:
+        # Check if the model name suggests it's an older version
+        if "2509" not in args.model and "edit-plus" not in args.model.lower():
+            raise ValueError(
+                f"Multiple images ({len(input_images)}) are provided, but the model '{args.model}' "
+                "appears to be an older version that does not support multiple image inputs.\n"
+                "Please use Qwen/Qwen-Image-Edit-2509 or later model version"
+            )
 
     device = detect_device_type()
     generator = torch.Generator(device=device).manual_seed(args.seed)
@@ -158,14 +171,23 @@ def main():
         raise ValueError("TeaCache is not supported for image-to-image generation.")
 
     # Choose pipeline based on number of images
-    # QwenImageEditPlusPipeline supports multiple images with proper prompt template
-    # QwenImageEditPipeline is for single image editing
+    # QwenImageEditPlusPipeline supports multiple images with proper prompt template and separate condition/VAE image processing
+    # QwenImageEditPipeline only supports single image editing (does NOT support multiple images - will fail if list is passed)
     if isinstance(input_image, list) and len(input_image) > 1:
         model_class_name = "QwenImageEditPlusPipeline"
         print(f"Using QwenImageEditPlusPipeline for {len(input_image)} input images")
     else:
+        # For single image, we can use either pipeline, but QwenImageEditPipeline is the original
         model_class_name = "QwenImageEditPipeline"
         print("Using QwenImageEditPipeline for single image editing")
+    
+    # Safety check: Ensure QwenImageEditPipeline is never used with multiple images
+    if model_class_name == "QwenImageEditPipeline" and isinstance(input_image, list) and len(input_image) > 1:
+        raise ValueError(
+            f"QwenImageEditPipeline does not support multiple images ({len(input_image)} provided). "
+            "Please use Qwen/Qwen-Image-Edit-2509 or later model version which supports "
+            "QwenImageEditPlusPipeline for multiple image editing."
+        )
     
     # Initialize Omni with appropriate pipeline
     omni = Omni(
