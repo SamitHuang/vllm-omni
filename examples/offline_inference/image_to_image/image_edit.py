@@ -10,7 +10,8 @@ Usage (single image):
         --prompt "Let this mascot dance under the moon, surrounded by floating stars and poetic bubbles such as 'Be Kind'" \
         --output output_image_edit.png \
         --num_inference_steps 50 \
-        --cfg_scale 4.0
+        --cfg_scale 4.0 \
+        --guidance_scale 1.0
 
 Usage (multiple images):
     python image_edit.py \
@@ -18,7 +19,8 @@ Usage (multiple images):
         --prompt "Combine these images into a single scene" \
         --output output_image_edit.png \
         --num_inference_steps 50 \
-        --cfg_scale 4.0
+        --cfg_scale 4.0 \
+        --guidance_scale 1.0
 
 For more options, run:
     python image_edit.py --help
@@ -76,7 +78,22 @@ def parse_args() -> argparse.Namespace:
         "--cfg_scale",
         type=float,
         default=4.0,
-        help="True classifier-free guidance scale specific to Qwen-Image-Edit.",
+        help=(
+            "True classifier-free guidance scale (default: 4.0). Guidance scale as defined in Classifier-Free "
+            "Diffusion Guidance. Classifier-free guidance is enabled by setting cfg_scale > 1 and providing "
+            "a negative_prompt. Higher guidance scale encourages images closely linked to the text prompt, "
+            "usually at the expense of lower image quality."
+        ),
+    )
+    parser.add_argument(
+        "--guidance_scale",
+        type=float,
+        default=1.0,
+        help=(
+            "Guidance scale for guidance-distilled models (default: 1.0, disabled). "
+            "Unlike classifier-free guidance (--cfg_scale), guidance-distilled models take the guidance scale "
+            "directly as an input parameter. Enabled when guidance_scale > 1. Ignored when not using guidance-distilled models."
+        ),
     )
     parser.add_argument(
         "--output",
@@ -222,6 +239,7 @@ def main():
         negative_prompt=args.negative_prompt,
         generator=generator,
         true_cfg_scale=args.cfg_scale,
+        guidance_scale=args.guidance_scale,
         num_inference_steps=args.num_inference_steps,
         num_outputs_per_prompt=args.num_outputs_per_prompt,
     )
