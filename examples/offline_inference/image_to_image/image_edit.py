@@ -144,7 +144,6 @@ def main():
     else:
         input_image = input_images
 
-
     device = detect_device_type()
     generator = torch.Generator(device=device).manual_seed(args.seed)
 
@@ -173,7 +172,6 @@ def main():
         }
     elif args.cache_backend == "tea_cache":
         raise ValueError("TeaCache is not supported for image-to-image generation.")
-
 
     # Initialize Omni with appropriate pipeline
     omni = Omni(
