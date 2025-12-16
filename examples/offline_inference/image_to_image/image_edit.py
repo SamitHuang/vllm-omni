@@ -121,7 +121,7 @@ def main():
         img = Image.open(image_path).convert("RGB")
         input_images.append(img)
         print(f"Loaded input image from {image_path} (size: {img.size})")
-    
+
     # Use single image or list based on number of inputs
     if len(input_images) == 1:
         input_image = input_images[0]
@@ -131,7 +131,7 @@ def main():
         print(f"\nUsing {len(input_images)} image inputs")
         for idx, img in enumerate(input_images):
             print(f"  Image {idx + 1}: size {img.size}")
-    
+
     if len(input_images) > 1:
         # Check if the model name suggests it's an older version
         if "2509" not in args.model and "edit-plus" not in args.model.lower():
@@ -180,7 +180,7 @@ def main():
         # For single image, we can use either pipeline, but QwenImageEditPipeline is the original
         model_class_name = "QwenImageEditPipeline"
         print("Using QwenImageEditPipeline for single image editing")
-    
+
     # Safety check: Ensure QwenImageEditPipeline is never used with multiple images
     if model_class_name == "QwenImageEditPipeline" and isinstance(input_image, list) and len(input_image) > 1:
         raise ValueError(
@@ -188,7 +188,7 @@ def main():
             "Please use Qwen/Qwen-Image-Edit-2509 or later model version which supports "
             "QwenImageEditPlusPipeline for multiple image editing."
         )
-    
+
     # Initialize Omni with appropriate pipeline
     omni = Omni(
         model=args.model,

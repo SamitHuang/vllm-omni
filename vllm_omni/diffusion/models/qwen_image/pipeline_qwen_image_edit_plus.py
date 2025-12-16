@@ -28,8 +28,8 @@ from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineL
 from vllm_omni.diffusion.models.qwen_image.pipeline_qwen_image import calculate_shift
 from vllm_omni.diffusion.models.qwen_image.pipeline_qwen_image_edit import (
     calculate_dimensions,
-    retrieve_timesteps,
     retrieve_latents,
+    retrieve_timesteps,
 )
 from vllm_omni.diffusion.models.qwen_image.qwen_image_transformer import (
     QwenImageTransformer2DModel,
@@ -149,8 +149,6 @@ def get_qwen_image_edit_plus_post_process_func(
         return image_processor.postprocess(images)
 
     return post_process_func
-
-
 
 
 class QwenImageEditPlusPipeline(
@@ -615,10 +613,10 @@ class QwenImageEditPlusPipeline(
             # fallback to run pre-processing in pipeline (debug only)
             if image is None:
                 raise ValueError("Image is required for QwenImageEditPlusPipeline")
-            
+
             if not isinstance(image, list):
                 image = [image]
-            
+
             image_size = image[0].size
             calculated_width, calculated_height = calculate_dimensions(VAE_IMAGE_SIZE, image_size[0] / image_size[1])
             height = height or calculated_height
@@ -632,7 +630,7 @@ class QwenImageEditPlusPipeline(
             vae_images = []
             condition_image_sizes = []
             vae_image_sizes = []
-            
+
             for img in image:
                 image_width, image_height = img.size
                 condition_width, condition_height = calculate_dimensions(
@@ -787,4 +785,3 @@ class QwenImageEditPlusPipeline(
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights)
-
