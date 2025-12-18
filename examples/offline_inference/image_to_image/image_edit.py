@@ -34,6 +34,7 @@ from pathlib import Path
 import torch
 from PIL import Image
 
+from vllm_omni.diffusion.data import DiffusionParallelConfig
 from vllm_omni.entrypoints.omni import Omni
 from vllm_omni.utils.platform_utils import detect_device_type, is_npu
 
@@ -124,6 +125,13 @@ def parse_args() -> argparse.Namespace:
             "Default: None (no cache acceleration)."
         ),
     )
+    parser.add_argument(
+        "--ulysses_degree",
+        type=int,
+        default=1,
+        help="Number of GPUs used for ulysses sequence parallelism.",
+    )
+
     return parser.parse_args()
 
 
@@ -151,6 +159,7 @@ def main():
     vae_use_slicing = is_npu()
     vae_use_tiling = is_npu()
 
+    parallel_config = DiffusionParallelConfig(ulysses_degree=args.ulysses_degree)
     # Configure cache based on backend type
     cache_config = None
     if args.cache_backend == "cache_dit":
@@ -171,7 +180,14 @@ def main():
             "scm_steps_policy": "dynamic",  # SCM steps policy: "dynamic" or "static"
         }
     elif args.cache_backend == "tea_cache":
-        raise ValueError("TeaCache is not supported for image-to-image generation.")
+        # TeaCache configuration
+        # All parameters marked with [tea_cache only] in DiffusionCacheConfig
+        cache_config = {
+            # TeaCache parameters [tea_cache only]
+            "rel_l1_thresh": 0.2,  # Threshold for accumulated relative L1 distance
+            # Note: coefficients will use model-specific defaults based on model_type
+            #       (e.g., QwenImagePipeline or FluxPipeline)
+        }
 
     # Initialize Omni with appropriate pipeline
     omni = Omni(
@@ -180,6 +196,7 @@ def main():
         vae_use_tiling=vae_use_tiling,
         cache_backend=args.cache_backend,
         cache_config=cache_config,
+        parallel_config=parallel_config,
     )
     print("Pipeline loaded")
 
@@ -195,6 +212,8 @@ def main():
             print(f"    Image {idx + 1} size: {img.size}")
     else:
         print(f"  Input image size: {input_image.size}")
+    print(f"  Parallel configuration: ulysses_degree={args.ulysses_degree}")
+    print(f"  Input image size: {input_image.size}")
     print(f"{'=' * 60}\n")
 
     generation_start = time.perf_counter()
