@@ -159,7 +159,7 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
         STARTUP_COMPLETE=true
         break
     fi
-    
+
     # Check if server process is still running
     if ! kill -0 "$SERVER_PID" 2>/dev/null; then
         cleanup_tail
@@ -168,7 +168,7 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
         wait "$SERVER_PID" 2>/dev/null || true
         exit 1
     fi
-    
+
     sleep 1
     ELAPSED=$((ELAPSED + 1))
 done
@@ -210,4 +210,3 @@ echo ""
 wait $SERVER_PID $GRADIO_PID || true
 
 cleanup
-
