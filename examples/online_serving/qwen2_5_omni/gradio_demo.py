@@ -118,7 +118,7 @@ def audio_to_base64_data_url(audio_data: tuple[np.ndarray, int]) -> str:
             audio_np = (audio_np * 32767).astype(np.int16)
         else:
             audio_np = audio_np.astype(np.int16)
-    
+
     # Write to WAV bytes
     buffered = io.BytesIO()
     sf.write(buffered, audio_np, sample_rate, format="WAV")
@@ -132,7 +132,7 @@ def video_to_base64_data_url(video_file: str) -> str:
     video_path = Path(video_file)
     if not video_path.exists():
         raise FileNotFoundError(f"Video file not found: {video_file}")
-    
+
     # Detect MIME type from extension
     video_path_lower = str(video_path).lower()
     if video_path_lower.endswith(".mp4"):
@@ -147,7 +147,7 @@ def video_to_base64_data_url(video_file: str) -> str:
         mime_type = "video/x-matroska"
     else:
         mime_type = "video/mp4"
-    
+
     with open(video_path, "rb") as f:
         video_bytes = f.read()
     video_b64 = base64.b64encode(video_bytes).decode("utf-8")
@@ -249,26 +249,30 @@ def run_inference_api(
     try:
         # Build message content list
         content_list = []
-        
+
         # Process audio
         audio_data = process_audio_file(audio_file)
         if audio_data is not None:
             audio_url = audio_to_base64_data_url(audio_data)
-            content_list.append({
-                "type": "audio_url",
-                "audio_url": {"url": audio_url},
-            })
-        
+            content_list.append(
+                {
+                    "type": "audio_url",
+                    "audio_url": {"url": audio_url},
+                }
+            )
+
         # Process image
         if image_file is not None:
             image_data = process_image_file(image_file)
             if image_data is not None:
                 image_url = image_to_base64_data_url(image_data)
-                content_list.append({
-                    "type": "image_url",
-                    "image_url": {"url": image_url},
-                })
-        
+                content_list.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": image_url},
+                    }
+                )
+
         # Process video
         mm_processor_kwargs = {}
         if video_file is not None:
@@ -281,14 +285,16 @@ def run_inference_api(
                 video_content["video_url"]["num_frames"] = 32  # Default max frames
                 mm_processor_kwargs["use_audio_in_video"] = True
             content_list.append(video_content)
-        
+
         # Add text prompt
         if user_prompt.strip():
-            content_list.append({
-                "type": "text",
-                "text": user_prompt,
-            })
-        
+            content_list.append(
+                {
+                    "type": "text",
+                    "text": user_prompt,
+                }
+            )
+
         # Build messages
         messages = [
             {
@@ -309,20 +315,20 @@ def run_inference_api(
                 "content": content_list,
             },
         ]
-        
+
         # Build extra_body
         extra_body = {
             "sampling_params_list": sampling_params_dict,
         }
         if mm_processor_kwargs:
             extra_body["mm_processor_kwargs"] = mm_processor_kwargs
-        
+
         # Parse output modalities
         if output_modalities is not None:
             output_modalities_list = [m.strip() for m in output_modalities.split(",")]
         else:
             output_modalities_list = None
-        
+
         # Call API
         chat_completion = client.chat.completions.create(
             messages=messages,
@@ -330,11 +336,11 @@ def run_inference_api(
             modalities=output_modalities_list,
             extra_body=extra_body,
         )
-        
+
         # Extract outputs
         text_outputs: list[str] = []
         audio_output = None
-        
+
         for choice in chat_completion.choices:
             if choice.message.content:
                 text_outputs.append(choice.message.content)
@@ -347,7 +353,7 @@ def run_inference_api(
                 if audio_np.ndim > 1:
                     audio_np = audio_np[:, 0]
                 audio_output = (int(sample_rate), audio_np.astype(np.float32))
-        
+
         text_response = "\n\n".join(text_outputs) if text_outputs else "No text output."
         return text_response, audio_output
     except Exception as exc:  # pylint: disable=broad-except
