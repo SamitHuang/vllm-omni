@@ -20,7 +20,8 @@ source .venv/bin/activate
 uv pip install vllm==0.12.0 --torch-backend=auto
 uv pip install vllm-omni
 ```
-> If you encounter attn errors after upgrading vllm to 0.12.0, you can uninstall or upgrade xformers manually since vllm 0.12.0 has deprecated xformers dependency.
+
+**Note:** If you encounter attn errors after upgrading vllm to 0.12.0, you can uninstall or upgrade xformers manually since vllm 0.12.0 has deprecated xformers dependency.
 
 For additional details—including alternative installation methods, installation on NPU and other platforms — please see the installation guide in [installation](installation/README.md)
 
