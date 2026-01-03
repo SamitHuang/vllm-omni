@@ -370,6 +370,8 @@ def forward(self, req: OmniDiffusionRequest, ...) -> DiffusionOutput:
 
 #### 4.3 Diffusion Loop
 
+The multi-step diffusion loop is usually the most time-consuming part during the overall inference process.
+
 ```python
 def diffuse(self, ...):
     for i, t in enumerate(timesteps):
@@ -402,6 +404,8 @@ def diffuse(self, ...):
 - **CFG Support**: Handles classifier-free guidance with separate forward passes
 - **Cache Branching**: Uses `cache_branch` parameter for cache-aware execution
 - **True CFG**: Implements advanced CFG with norm preservation
+
+To learn how to add a new diffusion pipeline, please view [Adding Diffusion Model](https://docs.vllm.ai/projects/vllm-omni/en/latest/contributing/model/adding_diffusion_model)
 
 ---
 
