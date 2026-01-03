@@ -16,5 +16,4 @@ This section contains design documents and architecture specifications for vLLM-
 
 - [AR Module](module/ar_module.md)
 - [DIT Module](module/dit_module.md)
-- [Diffusion Engine Core](module/diffusion_engine_core.md)
 - [Entrypoint Module](module/entrypoint_module.md)
