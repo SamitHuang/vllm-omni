@@ -1,30 +1,29 @@
 # Diffusion Module Architecture Design
 
-## Overview
-
 The vLLM-Omni diffusion module (`vllm_omni/diffusion`) is a high-performance inference engine for diffusion models, designed with a modular architecture that separates concerns across multiple components. It provides efficient execution for non-autoregressive generation tasks such as image and video generation.
 
 This document describes the architecture design of the diffusion module, including the diffusion engine, scheduler, worker, diffusion pipeline, and acceleration components.
 
 <p align="center">
-  <figure>
-    <img src="vllm_omni_diffusion_module_arch.png" alt="vLLM-Omni Diffusion Module Components" width="60%">
-    <figcaption align="center"><b>Figure:</b> Main Components of the Diffusion Module</figcaption>
-  </figure>
+   <img src="https://github.com/user-attachments/assets/83f9650c-dc8b-455b-af7f-56e5a54af75b" alt="vLLM-Omni Diffusion Module Components" width="60%">
+</p>
+<p align="center">
+  <em> Main Components of the Diffusion Module </em>
 </p>
 
 
-## Table of Contents
+**Table of Content:**
 
 - [Architecture Overview](#architecture-overview)
-- [Diffusion Engine](#diffusion-engine)
-- [Scheduler](#scheduler)
-- [Worker](#worker)
-- [Diffusion Pipeline](#diffusion-pipeline)
-- [Acceleration Components](#acceleration-components)
-   - [Attention Backends](#attention-backends)
-   - [Cache Backends](#cache-backends)
-- [Data Flow](#data-flow)
+- [Diffusion Engine](#1-diffusion-engine)
+- [Scheduler](#2-scheduler)
+- [Worker](#3-worker)
+- [Diffusion Pipeline](#4-diffusion-pipeline)
+- [Acceleration Components](#5-acceleration-components)
+   - [Attention Backends](#51-attention-backends)
+   - [Cache Backends](#52-cache-backends)
+   - [Parallel Strategies](#53-parallel-strategies)
+- [Data Flow](#6-data-flow)
 
 ---
 
@@ -33,10 +32,10 @@ This document describes the architecture design of the diffusion module, includi
 The diffusion module follows a **multi-process, distributed architecture** with clear separation of concerns:
 
 <p align="center">
-  <figure>
-    <img src="vllm-omni_diffusion_module_arch2.png" alt="vLLM-Omni Diffusion Module Architecture" width="60%">
-    <figcaption align="center"><b>Figure:</b> Diffusion Architecture Overview</figcaption>
-  </figure>
+  <img src="https://github.com/user-attachments/assets/78c4d446-d238-4406-a057-eb17d2ccc8e0" alt="vLLM-Omni Diffusion Module Architecture" width="100%">
+</p>
+<p align="center">
+  <em> Diffusion Architecture Overview </em>
 </p>
 
 
@@ -667,6 +666,79 @@ def get_cache_backend(
 3. **Refresh**: `backend.refresh(pipeline, num_inference_steps)` called before each generation
 4. **Check**: `backend.is_enabled()` verifies cache is active
 
+### 5.3 Parallel Strategies
+
+**Location**: `vllm_omni/diffusion/distributed/parallel_state.py`
+
+#### Parallelism Types
+
+The system supports multiple orthogonal parallelism strategies:
+
+**Tensor Parallelism (TP)**
+- **Purpose**: Split model weights across GPUs
+- **Implementation**: Uses vLLM's tensor parallel groups
+- **Use Case**: Large models that don't fit on single GPU
+
+**Sequence Parallelism (SP)**
+- **Purpose**: Split sequence dimension across GPUs
+- **Sub-types**:
+  - **Ulysses**: Long sequence attention parallelism (USP)
+  - **Ring**: Ring-based sequence parallelism
+- **Configuration**: `ulysses_degree` × `ring_degree` = `sequence_parallel_size`
+- **Use Case**: Very long sequences (e.g., high-resolution images)
+
+**Data Parallelism (DP)**
+- **Purpose**: Replicate model across GPUs, split batch
+- **Use Case**: Batch processing, throughput optimization
+
+**CFG Parallelism**  (under development)
+- **Purpose**: Parallelize Classifier-Free Guidance (positive/negative prompts)
+- **Infrastructure**: CFG parallel groups are initialized and available via `get_cfg_group()`
+
+#### Parallel Group Management
+
+```python
+def initialize_model_parallel(
+    data_parallel_size: int = 1,
+    cfg_parallel_size: int = 1,
+    sequence_parallel_size: int | None = None,
+    ulysses_degree: int = 1,
+    ring_degree: int = 1,
+    tensor_parallel_size: int = 1,
+    pipeline_parallel_size: int = 1,
+    vae_parallel_size: int = 0,
+):
+    # Generate orthogonal parallel groups
+    rank_generator = RankGenerator(
+        tensor_parallel_size,
+        sequence_parallel_size,
+        pipeline_parallel_size,
+        cfg_parallel_size,
+        data_parallel_size,
+        "tp-sp-pp-cfg-dp",
+    )
+    
+    # Initialize each parallel group
+    _DP = init_model_parallel_group(rank_generator.get_ranks("dp"), ...)
+    _CFG = init_model_parallel_group(rank_generator.get_ranks("cfg"), ...)
+    _SP = init_model_parallel_group(rank_generator.get_ranks("sp"), ...)
+    _PP = init_model_parallel_group(rank_generator.get_ranks("pp"), ...)
+    _TP = init_model_parallel_group(rank_generator.get_ranks("tp"), ...)
+```
+
+**Rank Order**: `tp-sp-pp-cfg-dp` (tensor → sequence → pipeline → cfg → data)
+
+#### Ulysses Sequence Parallelism (USP)
+
+**Location**: `vllm_omni/diffusion/attention/parallel/ulysses.py`
+
+USP is a sequence-parallel attention strategy that splits attention computation across multiple GPUs by distributing both the sequence dimension and attention heads. It uses **all-to-all communication** to efficiently parallelize attention for very long sequences. Detailedly, it uses **all-to-all** collective operations to redistribute Q/K/V tensors before attention computation and gather results afterward.
+
+Ulysses splits attention computation in two dimensions:
+1. **Sequence Dimension**: Splits the sequence length across GPUs
+2. **Head Dimension**: Splits attention heads across GPUs
+
+
 ---
 
 ## 6. Data Flow
@@ -674,10 +746,10 @@ def get_cache_backend(
 ### Complete Request Flow
 
 <p align="center">
-  <figure>
-    <img src="vllm-omni_diffusion_module_arch3.png" alt="vLLM-Omni Diffusion Module Data Flow" width="90%">
-    <figcaption align="center"><b>Figure:</b> End-to-end Data Flow in the vLLM-Omni Diffusion Module</figcaption>
-  </figure>
+   <img src="https://github.com/user-attachments/assets/6e093a0d-29c0-4efd-85d5-747002bd2fed" alt="vLLM-Omni Diffusion Module Components" width="100%">
+</p>
+<p align="center">
+  <em> End-to-end Data Flow in the vLLM-Omni Diffusion Module </em>
 </p>
 
 
