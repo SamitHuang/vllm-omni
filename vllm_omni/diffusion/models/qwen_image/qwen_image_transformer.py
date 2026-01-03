@@ -19,13 +19,19 @@ from vllm.model_executor.layers.layernorm import RMSNorm
 from vllm.model_executor.layers.linear import QKVParallelLinear, ReplicatedLinear
 from vllm.model_executor.model_loader.weight_utils import default_weight_loader
 
+from vllm_omni.diffusion.attention.backends.abstract import (
+    AttentionMetadata,
+)
 from vllm_omni.diffusion.attention.layer import Attention
-from vllm_omni.diffusion.data import OmniDiffusionConfig
+from vllm_omni.diffusion.cache.base import CachedTransformer
+from vllm_omni.diffusion.data import OmniDiffusionConfig, get_current_omni_diffusion_config
 from vllm_omni.diffusion.distributed.parallel_state import (
     get_sequence_parallel_rank,
     get_sequence_parallel_world_size,
     get_sp_group,
 )
+from vllm_omni.diffusion.forward_context import get_forward_context
+from vllm_omni.diffusion.layers.adalayernorm import AdaLayerNorm
 from vllm_omni.diffusion.layers.rope import RotaryEmbedding
 
 logger = init_logger(__name__)
@@ -355,6 +361,12 @@ class QwenImageCrossAttention(nn.Module):
         )
         self.rope = RotaryEmbedding(is_neox_style=False)
 
+        try:
+            config = get_current_omni_diffusion_config()
+            self.parallel_config = config.parallel_config
+        except Exception:
+            self.parallel_config = None
+
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -404,11 +416,31 @@ class QwenImageCrossAttention(nn.Module):
         joint_value = torch.cat([txt_value, img_value], dim=1)
 
         # Compute joint attention
-        joint_hidden_states = self.attn(
-            joint_query,
-            joint_key,
-            joint_value,
-        )
+
+        if (
+            self.parallel_config is not None
+            and self.parallel_config.sequence_parallel_size > 1
+            and not get_forward_context().split_text_embed_in_sp
+        ):
+            # if using sequence parallel, but not splitting text embed,
+            #  we need to pass text embedding to attention layer as joint qkv
+            joint_hidden_states = self.attn(
+                img_query,
+                img_key,
+                img_value,
+                AttentionMetadata(
+                    joint_query=txt_query,
+                    joint_key=txt_key,
+                    joint_value=txt_value,
+                    joint_strategy="front",
+                ),
+            )
+        else:
+            joint_hidden_states = self.attn(
+                joint_query,
+                joint_key,
+                joint_value,
+            )
         joint_hidden_states = joint_hidden_states.flatten(2, 3)
         joint_hidden_states = joint_hidden_states.to(joint_query.dtype)
 
@@ -447,7 +479,7 @@ class QwenImageTransformerBlock(nn.Module):
             nn.SiLU(),
             nn.Linear(dim, 6 * dim, bias=True),  # For scale, shift, gate for norm1 and norm2
         )
-        self.img_norm1 = nn.LayerNorm(dim, elementwise_affine=False, eps=eps)
+        self.img_norm1 = AdaLayerNorm(dim, elementwise_affine=False, eps=eps)
         self.attn = QwenImageCrossAttention(
             dim=dim,
             num_heads=num_attention_heads,
@@ -455,7 +487,7 @@ class QwenImageTransformerBlock(nn.Module):
             context_pre_only=False,
             head_dim=attention_head_dim,
         )
-        self.img_norm2 = nn.LayerNorm(dim, elementwise_affine=False, eps=eps)
+        self.img_norm2 = AdaLayerNorm(dim, elementwise_affine=False, eps=eps)
         self.img_mlp = FeedForward(dim=dim, dim_out=dim, activation_fn="gelu-approximate")
 
         # Text processing modules
@@ -463,9 +495,9 @@ class QwenImageTransformerBlock(nn.Module):
             nn.SiLU(),
             nn.Linear(dim, 6 * dim, bias=True),  # For scale, shift, gate for norm1 and norm2
         )
-        self.txt_norm1 = nn.LayerNorm(dim, elementwise_affine=False, eps=eps)
+        self.txt_norm1 = AdaLayerNorm(dim, elementwise_affine=False, eps=eps)
         # Text doesn't need separate attention - it's handled by img_attn joint computation
-        self.txt_norm2 = nn.LayerNorm(dim, elementwise_affine=False, eps=eps)
+        self.txt_norm2 = AdaLayerNorm(dim, elementwise_affine=False, eps=eps)
         self.txt_mlp = FeedForward(dim=dim, dim_out=dim, activation_fn="gelu-approximate")
 
         self.zero_cond_t = zero_cond_t
@@ -529,12 +561,10 @@ class QwenImageTransformerBlock(nn.Module):
         txt_mod1, txt_mod2 = txt_mod_params.chunk(2, dim=-1)  # Each [B, 3*dim]
 
         # Process image stream - norm1 + modulation
-        img_normed = self.img_norm1(hidden_states)
-        img_modulated, img_gate1 = self._modulate(img_normed, img_mod1, modulate_index)
+        img_modulated, img_gate1 = self.img_norm1(hidden_states, img_mod1)
 
         # Process text stream - norm1 + modulation
-        txt_normed = self.txt_norm1(encoder_hidden_states)
-        txt_modulated, txt_gate1 = self._modulate(txt_normed, txt_mod1)
+        txt_modulated, txt_gate1 = self.txt_norm1(encoder_hidden_states, txt_mod1)
 
         # Use QwenAttnProcessor2_0 for joint attention computation
         # This directly implements the DoubleStreamLayerMegatron logic:
@@ -557,14 +587,12 @@ class QwenImageTransformerBlock(nn.Module):
         encoder_hidden_states = encoder_hidden_states + txt_gate1 * txt_attn_output
 
         # Process image stream - norm2 + MLP
-        img_normed2 = self.img_norm2(hidden_states)
-        img_modulated2, img_gate2 = self._modulate(img_normed2, img_mod2, modulate_index)
+        img_modulated2, img_gate2 = self.img_norm2(hidden_states, img_mod2)
         img_mlp_output = self.img_mlp(img_modulated2)
         hidden_states = hidden_states + img_gate2 * img_mlp_output
 
         # Process text stream - norm2 + MLP
-        txt_normed2 = self.txt_norm2(encoder_hidden_states)
-        txt_modulated2, txt_gate2 = self._modulate(txt_normed2, txt_mod2)
+        txt_modulated2, txt_gate2 = self.txt_norm2(encoder_hidden_states, txt_mod2)
         txt_mlp_output = self.txt_mlp(txt_modulated2)
         encoder_hidden_states = encoder_hidden_states + txt_gate2 * txt_mlp_output
 
@@ -577,7 +605,8 @@ class QwenImageTransformerBlock(nn.Module):
         return encoder_hidden_states, hidden_states
 
 
-class QwenImageTransformer2DModel(nn.Module):
+# Note: inheriting from CachedTransformer only when we support caching
+class QwenImageTransformer2DModel(CachedTransformer):
     """
     The Transformer model introduced in Qwen.
 
@@ -707,7 +736,10 @@ class QwenImageTransformer2DModel(nn.Module):
             hidden_states = torch.chunk(hidden_states, get_sequence_parallel_world_size(), dim=-2)[
                 get_sequence_parallel_rank()
             ]
-
+            # NOTE:
+            # QwenImage uses *dual-stream* (text + image) and runs a *joint attention*.
+            # text embeddings to be replicated across SP ranks for correctness.
+            get_forward_context().split_text_embed_in_sp = False
         hidden_states = self.img_in(hidden_states)
 
         # Ensure timestep tensor is on the same device and dtype as hidden_states
@@ -744,6 +776,8 @@ class QwenImageTransformer2DModel(nn.Module):
         if self.parallel_config.sequence_parallel_size > 1:
             img_freqs, txt_freqs = image_rotary_emb
             img_freqs = get_rotary_emb_chunk(img_freqs)
+            if get_forward_context().split_text_embed_in_sp:
+                txt_freqs = get_rotary_emb_chunk(txt_freqs)
             image_rotary_emb = (img_freqs, txt_freqs)
 
         for index_block, block in enumerate(self.transformer_blocks):
