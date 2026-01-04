@@ -303,7 +303,6 @@ def execute_model(self, reqs: list[OmniDiffusionRequest], od_config):
 ```
 
 **Optimizations**:
-- **Inference Mode**: Uses `@torch.inference_mode()` for performance
 - **Cache Reset**: Clears cache state before each generation
 - **Single Request**: Currently processes one request at a time (batching TODO)
 
@@ -674,11 +673,6 @@ def get_cache_backend(
 
 The system supports multiple orthogonal parallelism strategies:
 
-**Tensor Parallelism (TP)**
-- **Purpose**: Split model weights across GPUs
-- **Implementation**: Uses vLLM's tensor parallel groups
-- **Use Case**: Large models that don't fit on single GPU
-
 **Sequence Parallelism (SP)**
 - **Purpose**: Split sequence dimension across GPUs
 - **Sub-types**:
@@ -690,6 +684,11 @@ The system supports multiple orthogonal parallelism strategies:
 **Data Parallelism (DP)**
 - **Purpose**: Replicate model across GPUs, split batch
 - **Use Case**: Batch processing, throughput optimization
+
+**Tensor Parallelism (TP)** (Experimental)
+- **Purpose**: Split model weights across GPUs
+- **Implementation**: Uses vLLM's tensor parallel groups
+- **Use Case**: Large models that don't fit on single GPU
 
 **CFG Parallelism**  (under development)
 - **Purpose**: Parallelize Classifier-Free Guidance (positive/negative prompts)
