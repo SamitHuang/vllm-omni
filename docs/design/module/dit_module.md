@@ -5,7 +5,7 @@ The vLLM-Omni diffusion module (`vllm_omni/diffusion`) is a high-performance inf
 This document describes the architecture design of the diffusion module, including the diffusion engine, scheduler, worker, diffusion pipeline, and acceleration components.
 
 <p align="center">
-   <img src="https://github.com/user-attachments/assets/83f9650c-dc8b-455b-af7f-56e5a54af75b" alt="vLLM-Omni Diffusion Module Components" width="60%">
+   <img src="https://github.com/user-attachments/assets/cde1ebea-4006-4d30-8283-15a5721a09d2" alt="vLLM-Omni Diffusion Module Components" width="60%">
 </p>
 <p align="center">
   <em> Main Components of the Diffusion Module </em>
