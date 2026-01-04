@@ -451,7 +451,8 @@ class Attention(nn.Module):
 - **SDPA**: PyTorch's scaled dot-product attention - default, cross-platform
 - **SageAttention**: Sparse attention implementation from SageAttention library
 - **AscendAttention**: NPU-optimized attention for Ascend hardware
-- **Ring Attention**: Distributed attention across GPUs for very long sequences
+
+**Note**: Ring Attention is **not** an attention backend. It is a **parallel attention strategy** (see [Parallel Strategies](#53-parallel-strategies)) that implements sequence parallelism using ring-based communication. Ring Attention internally uses either FlashAttention or SDPA as its underlying attention kernel.
 
 #### Backend Selection Mechanism
 
@@ -620,7 +621,7 @@ class TeaCacheBackend(CacheBackend):
 - **Timestep-aware**: Caches based on timestep embedding similarity
 - **Adaptive**: Dynamically decides when to reuse cached computations
 - **CFG-aware**: Handles positive/negative branches separately
-- **Hook-based**: Uses PyTorch hooks for transparent integration
+- **Custom Hook System**: Uses a custom forward interception mechanism (via `HookRegistry`) that wraps the module's `forward` method, allowing transparent integration without modifying model code
 
 **2. Cache-DiT Backend**
 
@@ -755,6 +756,33 @@ USP is a sequence-parallel attention strategy that splits attention computation 
 Ulysses splits attention computation in two dimensions:
 1. **Sequence Dimension**: Splits the sequence length across GPUs
 2. **Head Dimension**: Splits attention heads across GPUs
+
+#### Ring Sequence Parallelism
+
+**Location**: `vllm_omni/diffusion/attention/parallel/ring.py`
+
+Ring Attention is a **parallel attention strategy** that implements sequence parallelism using ring-based point-to-point (P2P) communication. Unlike attention backends that provide the attention kernel implementation, Ring Attention is a **communication pattern** that works on top of attention backends (FlashAttention or SDPA).
+
+Ring Attention splits sequence dimension across GPUs in a ring topology, implemented via the `ParallelAttentionStrategy` interface, instead of `AttentionBackend`. P2P ring communication is applied to circulate Key/Value blocks across GPUs. Internally, `ring_flash_attn_func` or `ring_pytorch_attn_func` is used depending on available backends.
+
+**Architecture**:
+```python
+class RingParallelAttention:
+    """Ring sequence-parallel strategy."""
+    
+    def run_attention(self, query, key, value, attn_metadata, ...):
+        # Selects underlying attention kernel (FlashAttention or SDPA)
+        if backend_pref == "sdpa":
+            return ring_pytorch_attn_func(...)  # Uses SDPA kernel
+        else:
+            return ring_flash_attn_func(...)    # Uses FlashAttention kernel
+```
+
+**Integration**:
+- Ring Attention is activated when `ring_degree > 1` in parallel config
+- It's selected by `build_parallel_attention_strategy()` in the attention layer
+- The `Attention` layer routes to `_run_ring_attention()` when Ring is enabled
+- Works alongside attention backends: Ring handles communication, backends handle computation
 
 
 ---
