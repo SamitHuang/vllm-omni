@@ -298,12 +298,26 @@ def execute_model(self, reqs: list[OmniDiffusionRequest], od_config):
     if self.cache_backend is not None and self.cache_backend.is_enabled():
         self.cache_backend.refresh(self.pipeline, req.num_inference_steps)
     
-    output = self.pipeline.forward(req)
+    # Set forward context for parallelism
+    with set_forward_context(
+        vllm_config=self.vllm_config,
+        omni_diffusion_config=self.od_config
+    ):
+        output = self.pipeline.forward(req)
     return output
 ```
 
+The model execution leverages multiple parallelism strategies that are transparently applied during the forward pass. The `set_forward_context()` context manager makes parallel group information available throughout the forward pass:
+
+```python
+# Inside transformer layers, parallel groups are accessed via:
+from vllm_omni.diffusion.distributed.parallel_state import (
+    get_sp_group, get_dp_group, get_cfg_group, get_pp_group
+)
+
 **Optimizations**:
-- **Cache Reset**: Clears cache state before each generation
+- **Cache Refresh**: Clears cache state before each generation for clean state
+- **Context Management**: Forward context ensures parallel groups are available during execution
 - **Single Request**: Currently processes one request at a time (batching TODO)
 
 ---
@@ -367,6 +381,8 @@ def forward(self, req: OmniDiffusionRequest, ...) -> DiffusionOutput:
     return DiffusionOutput(output=image)
 ```
 
+The main steps of the forward pass are referred from `diffusers`.
+
 #### 4.3 Diffusion Loop
 
 The multi-step diffusion loop is usually the most time-consuming part during the overall inference process.
@@ -379,7 +395,6 @@ def diffuse(self, ...):
             "hidden_states": latents,
             "timestep": timestep / 1000,
             "encoder_hidden_states": prompt_embeds,
-            "cache_branch": "positive",  # For cache backends
         }
         noise_pred = self.transformer(**transformer_kwargs)[0]
         
@@ -791,3 +806,4 @@ Ulysses splits attention computation in two dimensions:
 ```
 
 ---
+
