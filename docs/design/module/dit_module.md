@@ -95,10 +95,10 @@ def _launch_workers(self, broadcast_handle):
 def step(self, requests: list[OmniDiffusionRequest]):
     # 1. Pre-process requests
     requests = self.pre_process_func(requests)
-    
+
     # 2. Send to scheduler and wait for response
     output = self.add_req_and_wait_for_response(requests)
-    
+
     # 3. Post-process results
     result = self.post_process_func(output.output)
     return result
@@ -132,7 +132,7 @@ class Scheduler:
             n_local_reader=od_config.num_gpus,
             local_reader_ranks=list(range(od_config.num_gpus)),
         )
-        
+
         # Result queue: rank 0 worker -> scheduler
         self.result_mq = None  # Initialized later
 ```
@@ -148,7 +148,7 @@ class Scheduler:
 def add_req(self, requests: list[OmniDiffusionRequest]) -> DiffusionOutput:
     # Broadcast request to all workers
     self.mq.enqueue(requests)
-    
+
     # Wait for result from Rank 0
     output = self.result_mq.dequeue()
     return output
@@ -164,7 +164,7 @@ def add_req(self, requests: list[OmniDiffusionRequest]) -> DiffusionOutput:
 ```python
 class Scheduler:
     _instance = None
-    
+
     def __new__(cls, *args, **kwargs):
         if not cls._instance:
             cls._instance = super().__new__(cls)
@@ -198,14 +198,14 @@ class WorkerProc:
     def __init__(self, od_config, gpu_id, broadcast_handle):
         # Initialize ZMQ context for IPC
         self.context = zmq.Context(io_threads=2)
-        
+
         # Connect to broadcast queue (receive requests)
         self.mq = MessageQueue.create_from_handle(broadcast_handle, gpu_id)
-        
+
         # Create result queue (only rank 0)
         if gpu_id == 0:
             self.result_mq = MessageQueue(n_reader=1, ...)
-        
+
         # Initialize GPU worker
         self.worker = GPUWorker(local_rank=gpu_id, rank=gpu_id, od_config=od_config)
 ```
@@ -227,7 +227,7 @@ class GPUWorker:
         # Set distributed environment variables
         os.environ["RANK"] = str(rank)
         os.environ["WORLD_SIZE"] = str(world_size)
-        
+
         # Initialize PyTorch distributed
         init_distributed_environment(world_size, rank)
         parallel_config = self.od_config.parallel_config
@@ -238,15 +238,15 @@ class GPUWorker:
             tensor_parallel_size=parallel_config.tensor_parallel_size,
             pipeline_parallel_size=parallel_config.pipeline_parallel_size,
         )
-        
+
         # Load model
         model_loader = DiffusersPipelineLoader(load_config)
         self.pipeline = model_loader.load_model(od_config, load_device=f"cuda:{rank}")
-        
+
         # Setup cache backend
         from vllm_omni.diffusion.cache.selector import get_cache_backend
         self.cache_backend = get_cache_backend(od_config.cache_backend, od_config.cache_config)
-        
+
         if self.cache_backend is not None:
             self.cache_backend.enable(self.pipeline)
 ```
@@ -263,18 +263,18 @@ def worker_busy_loop(self):
     while self._running:
         # 1. Receive unified message (generation request, RPC request, or shutdown)
         msg = self.recv_message()
-        
+
         # 2. Route message based on type
         if isinstance(msg, dict) and msg.get("type") == "rpc":
             # Handle RPC request
             result, should_reply = self.execute_rpc(msg)
             if should_reply:
                 self.return_result(result)
-        
+
         elif isinstance(msg, dict) and msg.get("type") == "shutdown":
             # Handle shutdown message
             self._running = False
-        
+
         else:
             # Handle generation request (OmniDiffusionRequest list)
             output = self.worker.execute_model(msg, self.od_config)
@@ -293,11 +293,11 @@ def worker_busy_loop(self):
 @torch.inference_mode()
 def execute_model(self, reqs: list[OmniDiffusionRequest], od_config):
     req = reqs[0]  # TODO: support batching
-    
+
     # Refresh cache backend if enabled
     if self.cache_backend is not None and self.cache_backend.is_enabled():
         self.cache_backend.refresh(self.pipeline, req.num_inference_steps)
-    
+
     # Set forward context for parallelism
     with set_forward_context(
         vllm_config=self.vllm_config,
@@ -343,7 +343,7 @@ class QwenImagePipeline(nn.Module):
         self.vae = AutoencoderKLQwenImage.from_pretrained(...)
         self.transformer = QwenImageTransformer2DModel(od_config=od_config)
         self.tokenizer = Qwen2Tokenizer.from_pretrained(...)
-        
+
         # Cache backend (set by worker)
         self._cache_backend = None
 ```
@@ -360,13 +360,13 @@ class QwenImagePipeline(nn.Module):
 def forward(self, req: OmniDiffusionRequest, ...) -> DiffusionOutput:
     # 1. Encode prompts
     prompt_embeds, prompt_embeds_mask = self.encode_prompt(prompt)
-    
+
     # 2. Prepare latents
     latents = self.prepare_latents(batch_size, num_channels, height, width, ...)
-    
+
     # 3. Prepare timesteps
     timesteps, num_inference_steps = self.prepare_timesteps(...)
-    
+
     # 4. Diffusion loop
     latents = self.diffuse(
         prompt_embeds, prompt_embeds_mask,
@@ -374,10 +374,10 @@ def forward(self, req: OmniDiffusionRequest, ...) -> DiffusionOutput:
         latents, img_shapes, txt_seq_lens,
         timesteps, do_true_cfg, guidance, true_cfg_scale,
     )
-    
+
     # 5. Decode latents
     image = self.vae.decode(latents)
-    
+
     return DiffusionOutput(output=image)
 ```
 
@@ -397,20 +397,20 @@ def diffuse(self, ...):
             "encoder_hidden_states": prompt_embeds,
         }
         noise_pred = self.transformer(**transformer_kwargs)[0]
-        
+
         # Forward pass for negative prompt (CFG)
         if do_true_cfg:
             neg_transformer_kwargs = {...}
             neg_transformer_kwargs["cache_branch"] = "negative"
             neg_noise_pred = self.transformer(**neg_transformer_kwargs)[0]
-            
+
             # Combine predictions
             comb_pred = neg_noise_pred + true_cfg_scale * (noise_pred - neg_noise_pred)
             noise_pred = comb_pred * (cond_norm / noise_norm)
-        
+
         # Scheduler step
         latents = self.scheduler.step(noise_pred, t, latents)[0]
-    
+
     return latents
 ```
 
@@ -460,10 +460,10 @@ class Attention(nn.Module):
 def get_attn_backend(head_size: int) -> type[AttentionBackend]:
     # Check environment variable
     backend_name = os.environ.get("DIFFUSION_ATTENTION_BACKEND")
-    
+
     if backend_name:
         return load_backend(backend_name.upper())
-    
+
     # Default to SDPA
     return SDPABackend
 ```
@@ -523,11 +523,11 @@ class FlashAttentionBackend(AttentionBackend):
     @staticmethod
     def get_name() -> str:
         return "FLASH_ATTN"
-    
+
     @staticmethod
     def get_impl_cls() -> type["FlashAttentionImpl"]:
         return FlashAttentionImpl
-    
+
     @staticmethod
     def get_supported_head_sizes() -> list[int]:
         return [64, 96, 128, 192, 256]  # FlashAttention supports these head sizes
@@ -538,7 +538,7 @@ class FlashAttentionImpl(AttentionImpl):
         self.num_heads = num_heads
         self.causal = causal
         self.softmax_scale = softmax_scale
-    
+
     def forward(self, query, key, value, attn_metadata=None):
         # Call FlashAttention kernel
         out = flash_attn_func(
@@ -566,17 +566,17 @@ class CacheBackend(ABC):
     def __init__(self, config: DiffusionCacheConfig):
         self.config = config
         self.enabled = False
-    
+
     @abstractmethod
     def enable(self, pipeline: Any) -> None:
         """Enable cache on the pipeline."""
         raise NotImplementedError
-    
+
     @abstractmethod
     def refresh(self, pipeline: Any, num_inference_steps: int, verbose: bool = True) -> None:
         """Refresh cache state for new generation."""
         raise NotImplementedError
-    
+
     def is_enabled(self) -> bool:
         """Check if cache is enabled."""
         return self.enabled
@@ -599,18 +599,18 @@ class TeaCacheBackend(CacheBackend):
         # Extract transformer from pipeline
         transformer = pipeline.transformer
         transformer_type = transformer.__class__.__name__
-        
+
         # Create TeaCacheConfig from DiffusionCacheConfig
         teacache_config = TeaCacheConfig(
             transformer_type=transformer_type,
             rel_l1_thresh=self.config.rel_l1_thresh,
             coefficients=self.config.coefficients,
         )
-        
+
         # Apply hooks to transformer
         apply_teacache_hook(transformer, teacache_config)
         self.enabled = True
-    
+
     def refresh(self, pipeline: Any, num_inference_steps: int, verbose: bool = True):
         transformer = pipeline.transformer
         if hasattr(transformer, "_hook_registry"):
@@ -635,7 +635,7 @@ class CacheDiTBackend(CacheBackend):
         # Works with single and dual-transformer architectures
         ...
         self.enabled = True
-    
+
     def refresh(self, pipeline: Any, num_inference_steps: int, verbose: bool = True):
         # Updates cache context with new num_inference_steps
         ...
@@ -657,20 +657,20 @@ def get_cache_backend(
     cache_config: dict | DiffusionCacheConfig
 ) -> CacheBackend | None:
     """Get cache backend instance based on cache_backend string.
-    
+
     Args:
         cache_backend: Cache backend name ("cache_dit", "tea_cache", or None)
         cache_config: Cache configuration (dict or DiffusionCacheConfig)
-    
+
     Returns:
         Cache backend instance or None if cache_backend is "none"
     """
     if cache_backend is None or cache_backend == "none":
         return None
-    
+
     if isinstance(cache_config, dict):
         cache_config = DiffusionCacheConfig.from_dict(cache_config)
-    
+
     if cache_backend == "cache_dit":
         return CacheDiTBackend(cache_config)
     elif cache_backend == "tea_cache":
@@ -736,7 +736,7 @@ def initialize_model_parallel(
         data_parallel_size,
         "tp-sp-pp-cfg-dp",
     )
-    
+
     # Initialize each parallel group
     _DP = init_model_parallel_group(rank_generator.get_ranks("dp"), ...)
     _CFG = init_model_parallel_group(rank_generator.get_ranks("cfg"), ...)
@@ -769,7 +769,7 @@ Ring Attention splits sequence dimension across GPUs in a ring topology, impleme
 ```python
 class RingParallelAttention:
     """Ring sequence-parallel strategy."""
-    
+
     def run_attention(self, query, key, value, attn_metadata, ...):
         # Selects underlying attention kernel (FlashAttention or SDPA)
         if backend_pref == "sdpa":
@@ -834,4 +834,3 @@ class RingParallelAttention:
 ```
 
 ---
-
