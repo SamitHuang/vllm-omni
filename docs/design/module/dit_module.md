@@ -21,8 +21,9 @@ This document describes the architecture design of the diffusion module, includi
 - [Diffusion Pipeline](#4-diffusion-pipeline)
 - [Acceleration Components](#5-acceleration-components)
    - [Attention Backends](#51-attention-backends)
-   - [Cache Backends](#52-cache-backends)
-   - [Parallel Strategies](#53-parallel-strategies)
+   - [Parallel Attention](#52-parallel-attention)
+   - [Cache Backends](#53-cache-backends)
+   - [Parallel Strategies](#54-parallel-strategies)
 - [Data Flow](#6-data-flow)
 
 ---
@@ -452,7 +453,7 @@ class Attention(nn.Module):
 - **SageAttention**: Sparse attention implementation from SageAttention library
 - **AscendAttention**: NPU-optimized attention for Ascend hardware
 
-**Note**: Ring Attention is **not** an attention backend. It is a **parallel attention strategy** (see [Parallel Strategies](#53-parallel-strategies)) that implements sequence parallelism using ring-based communication. Ring Attention internally uses either FlashAttention or SDPA as its underlying attention kernel.
+These backends provide the **kernel implementations** for attention computation. For attention-level sequence parallelism strategies (Ring Attention, Ulysses), see [Parallel Attention](#52-parallel-attention).
 
 #### Backend Selection Mechanism
 
@@ -549,9 +550,76 @@ class FlashAttentionImpl(AttentionImpl):
         return out
 ```
 
+---
 
+### 5.2 Parallel Attention
 
-### 5.2 Cache Backends
+**Location**: `vllm_omni/diffusion/attention/parallel/`
+
+#### Architecture
+
+Parallel attention strategies implement **Sequence Parallelism (SP) at the attention layer level**. These strategies distribute attention computation across multiple GPUs by splitting the sequence dimension, using different communication patterns. They work **on top of** AttentionBackend implementations (FlashAttention, SDPA, etc.), handling the parallelization/communication while the backends handle the actual attention computation.
+
+**Key Distinction**: Unlike AttentionBackend (which provides kernel implementations), ParallelAttentionStrategy provides communication patterns for multi-GPU attention parallelism. These strategies implement the `ParallelAttentionStrategy` interface and use AttentionBackend implementations internally.
+
+Both Ring Attention and Ulysses are forms of Sequence Parallelism (SP) that:
+- Split the sequence dimension across GPUs
+- Contribute to `sequence_parallel_size` (via `ring_degree` and `ulysses_degree`)
+- Work at the attention layer level (not model/pipeline level)
+
+#### Ulysses Sequence Parallelism (USP)
+
+**Location**: `vllm_omni/diffusion/attention/parallel/ulysses.py`
+
+USP is a sequence-parallel attention strategy that splits attention computation across multiple GPUs by distributing both the sequence dimension and attention heads. It uses **all-to-all communication** to efficiently parallelize attention for very long sequences. Specifically, it uses **all-to-all** collective operations to redistribute Q/K/V tensors before attention computation and gather results afterward.
+
+Ulysses splits attention computation in two dimensions:
+1. **Sequence Dimension**: Splits the sequence length across GPUs
+2. **Head Dimension**: Splits attention heads across GPUs
+
+**Configuration**: `ulysses_degree` contributes to `sequence_parallel_size`
+
+#### Ring Sequence Parallelism
+
+**Location**: `vllm_omni/diffusion/attention/parallel/ring.py`
+
+Ring Attention is a **parallel attention strategy** that implements sequence parallelism using ring-based point-to-point (P2P) communication. Unlike attention backends that provide the attention kernel implementation, Ring Attention is a **communication pattern** that works on top of attention backends (FlashAttention or SDPA).
+
+Ring Attention splits sequence dimension across GPUs in a ring topology, implemented via the `ParallelAttentionStrategy` interface, instead of `AttentionBackend`. P2P ring communication is applied to circulate Key/Value blocks across GPUs. Internally, `ring_flash_attn_func` or `ring_pytorch_attn_func` is used depending on available backends.
+
+**Architecture**:
+```python
+class RingParallelAttention:
+    """Ring sequence-parallel strategy."""
+
+    def run_attention(self, query, key, value, attn_metadata, ...):
+        # Selects underlying attention kernel (FlashAttention or SDPA)
+        if backend_pref == "sdpa":
+            return ring_pytorch_attn_func(...)  # Uses SDPA kernel
+        else:
+            return ring_flash_attn_func(...)    # Uses FlashAttention kernel
+```
+
+**Integration**:
+- Ring Attention is activated when `ring_degree > 1` in parallel config
+- It's selected by `build_parallel_attention_strategy()` in the attention layer
+- The `Attention` layer routes to `_run_ring_attention()` when Ring is enabled
+- Works alongside attention backends: Ring handles communication, backends handle computation
+
+**Configuration**: `ring_degree` contributes to `sequence_parallel_size`
+
+#### Relationship with AttentionBackend
+
+Parallel attention strategies (Ring, Ulysses) work **on top of** AttentionBackend implementations:
+- They use AttentionBackend for the actual attention computation (FlashAttention, SDPA, etc.)
+- They handle the multi-GPU communication/parallelization layer
+- They implement `ParallelAttentionStrategy` interface (not `AttentionBackend`)
+
+For general parallelism strategies (Data Parallelism, Tensor Parallelism, Pipeline Parallelism), see [Parallel Strategies](#54-parallel-strategies).
+
+---
+
+### 5.3 Cache Backends
 
 **Location**: `vllm_omni/diffusion/cache/`
 
@@ -685,7 +753,7 @@ def get_cache_backend(
 3. **Refresh**: `backend.refresh(pipeline, num_inference_steps)` called before each generation
 4. **Check**: `backend.is_enabled()` verifies cache is active
 
-### 5.3 Parallel Strategies
+### 5.4 Parallel Strategies
 
 **Location**: `vllm_omni/diffusion/distributed/parallel_state.py`
 
@@ -695,10 +763,9 @@ The system supports multiple orthogonal parallelism strategies:
 
 **Sequence Parallelism (SP)**
 - **Purpose**: Split sequence dimension across GPUs
-- **Sub-types**:
-  - **Ulysses**: Long sequence attention parallelism (USP)
-  - **Ring**: Ring-based sequence parallelism
-- **Configuration**: `ulysses_degree` × `ring_degree` = `sequence_parallel_size`
+- **Attention-level SP**: Ring Attention and Ulysses (USP) implement SP at the attention layer level
+  - See [Parallel Attention](#52-parallel-attention) for details
+  - Configuration: `ulysses_degree` × `ring_degree` = `sequence_parallel_size`
 - **Use Case**: Very long sequences (e.g., high-resolution images)
 
 **Data Parallelism (DP)**
@@ -747,42 +814,7 @@ def initialize_model_parallel(
 
 **Rank Order**: `tp-sp-pp-cfg-dp` (tensor → sequence → pipeline → cfg → data)
 
-#### Ulysses Sequence Parallelism (USP)
-
-**Location**: `vllm_omni/diffusion/attention/parallel/ulysses.py`
-
-USP is a sequence-parallel attention strategy that splits attention computation across multiple GPUs by distributing both the sequence dimension and attention heads. It uses **all-to-all communication** to efficiently parallelize attention for very long sequences. Detailedly, it uses **all-to-all** collective operations to redistribute Q/K/V tensors before attention computation and gather results afterward.
-
-Ulysses splits attention computation in two dimensions:
-1. **Sequence Dimension**: Splits the sequence length across GPUs
-2. **Head Dimension**: Splits attention heads across GPUs
-
-#### Ring Sequence Parallelism
-
-**Location**: `vllm_omni/diffusion/attention/parallel/ring.py`
-
-Ring Attention is a **parallel attention strategy** that implements sequence parallelism using ring-based point-to-point (P2P) communication. Unlike attention backends that provide the attention kernel implementation, Ring Attention is a **communication pattern** that works on top of attention backends (FlashAttention or SDPA).
-
-Ring Attention splits sequence dimension across GPUs in a ring topology, implemented via the `ParallelAttentionStrategy` interface, instead of `AttentionBackend`. P2P ring communication is applied to circulate Key/Value blocks across GPUs. Internally, `ring_flash_attn_func` or `ring_pytorch_attn_func` is used depending on available backends.
-
-**Architecture**:
-```python
-class RingParallelAttention:
-    """Ring sequence-parallel strategy."""
-
-    def run_attention(self, query, key, value, attn_metadata, ...):
-        # Selects underlying attention kernel (FlashAttention or SDPA)
-        if backend_pref == "sdpa":
-            return ring_pytorch_attn_func(...)  # Uses SDPA kernel
-        else:
-            return ring_flash_attn_func(...)    # Uses FlashAttention kernel
-```
-
-**Integration**:
-- Ring Attention is activated when `ring_degree > 1` in parallel config
-- It's selected by `build_parallel_attention_strategy()` in the attention layer
-- The `Attention` layer routes to `_run_ring_attention()` when Ring is enabled
-- Works alongside attention backends: Ring handles communication, backends handle computation
+**Note**: For attention-level Sequence Parallelism implementations (Ring Attention and Ulysses), see [Parallel Attention](#52-parallel-attention). This section covers higher-level parallelism strategies.
 
 
 ---
