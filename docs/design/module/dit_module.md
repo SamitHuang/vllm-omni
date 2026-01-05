@@ -367,70 +367,9 @@ from vllm_omni.diffusion.distributed.parallel_state import (
 
 **Location**: `vllm_omni/diffusion/models/*/pipeline_*.py`
 
-### Architecture
-
 The pipeline is the **model-specific implementation** that orchestrates the diffusion process. Different models (QwenImage, Wan2.2, Z-Image) have their own pipeline implementations.
 
-### Key Components (QwenImage Example)
-
-#### 4.1 Pipeline Structure
-
-```python
-class QwenImagePipeline(nn.Module):
-    def __init__(self, od_config: OmniDiffusionConfig):
-        # Core components
-        self.scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(...)
-        self.text_encoder = Qwen2_5_VLForConditionalGeneration.from_pretrained(...)
-        self.vae = AutoencoderKLQwenImage.from_pretrained(...)
-        self.transformer = QwenImageTransformer2DModel(od_config=od_config)
-        self.tokenizer = Qwen2Tokenizer.from_pretrained(...)
-
-        # Cache backend (set by worker)
-        self._cache_backend = None
-```
-
-**Component Responsibilities**:
-
-- **Text Encoder**: Encodes prompts into embeddings
-
-- **Transformer**: Main denoising network (DiT-style)
-
-- **VAE**: Encodes/decodes between pixel and latent space
-
-- **Scheduler**: Manages timestep scheduling
-
-#### 4.2 Forward Pass
-
-```python
-def forward(self, req: OmniDiffusionRequest, ...) -> DiffusionOutput:
-    # 1. Encode prompts
-    prompt_embeds, prompt_embeds_mask = self.encode_prompt(prompt)
-
-    # 2. Prepare latents
-    latents = self.prepare_latents(batch_size, num_channels, height, width, ...)
-
-    # 3. Prepare timesteps
-    timesteps, num_inference_steps = self.prepare_timesteps(...)
-
-    # 4. Diffusion loop
-    latents = self.diffuse(
-        prompt_embeds, prompt_embeds_mask,
-        negative_prompt_embeds, negative_prompt_embeds_mask,
-        latents, img_shapes, txt_seq_lens,
-        timesteps, do_true_cfg, guidance, true_cfg_scale,
-    )
-
-    # 5. Decode latents
-    image = self.vae.decode(latents)
-
-    return DiffusionOutput(output=image)
-```
-
-The main steps of the forward pass are referred from `diffusers`.
-
-#### 4.3 Diffusion Loop
-
-The multi-step diffusion loop is usually the most time-consuming part during the overall inference process.
+Most pipeline implementation are referred from `diffusers`. The multi-step diffusion loop is usually the most time-consuming part during the overall inference process, which is defined by the `diffuse` function in the pipeline class. An example is as follows: 
 
 ```python
 def diffuse(self, ...):
@@ -467,7 +406,7 @@ def diffuse(self, ...):
 
 - **True CFG**: Implements advanced CFG with norm preservation
 
-To learn how to add a new diffusion pipeline, please view [Adding Diffusion Model](https://docs.vllm.ai/projects/vllm-omni/en/latest/contributing/model/adding_diffusion_model)
+To learn more about the diffusion pipeline and how to add a new diffusion pipeline, please view [Adding Diffusion Model](https://docs.vllm.ai/projects/vllm-omni/en/latest/contributing/model/adding_diffusion_model)
 
 ---
 
