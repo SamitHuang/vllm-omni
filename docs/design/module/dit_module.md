@@ -218,7 +218,7 @@ class WorkerProc:
      - For NPU: Uses HCCL (Huawei Collective Communications Library)
      - For other devices: Uses appropriate backend (GLOO, MCCL, etc.)
 3. **Model Loading**: Loads diffusion pipeline on assigned GPU
-4. **Cache Setup**: Enables cache backend if configured. For deta
+4. **Cache Setup**: Enables cache backend if configured.
 
 #### 3.2 GPU Worker
 
