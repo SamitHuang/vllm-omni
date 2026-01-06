@@ -52,9 +52,9 @@ The following table shows which models are currently supported by each accelerat
 
 ### VideoGen
 
-| Model | Model Identifier | TeaCache | Cache-DiT | Ulysses-SP |
-|-------|------------------|----------|-----------|-----------|
-| **Wan2.2** | `Wan-AI/Wan2.2-T2V-A14B-Diffusers` | ❌ | ✅ | ❌ |
+| Model | Model Identifier | TeaCache | Cache-DiT | Ulysses-SP | Ring-Attention |
+|-------|------------------|----------|-----------|-----------|-----------|
+| **Wan2.2** | `Wan-AI/Wan2.2-T2V-A14B-Diffusers` | ❌ | ✅ | ❌ | ❌ |
 
 
 ## Performance Benchmarks
