@@ -1,7 +1,12 @@
 import inspect
+from typing import Any
+
+from vllm_omni.diffusion.data import TransformerConfig
 
 
-def get_transformer_config_kwargs(tf_model_config, model_class: type | None = None):
+def get_transformer_config_kwargs(
+    tf_model_config: TransformerConfig, model_class: type[Any] | None = None
+) -> dict[str, Any]:
     """
     This function extracts parameters from a TransformerConfig instance and filters out internal
     diffusers metadata keys (those starting with '_') that should not be passed to model initialization.
