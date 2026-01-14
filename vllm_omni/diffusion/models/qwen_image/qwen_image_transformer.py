@@ -521,7 +521,7 @@ class QwenImageTransformerBlock(nn.Module):
             nn.SiLU(),
             nn.Linear(dim, 6 * dim, bias=True),  # For scale, shift, gate for norm1 and norm2
         )
-        self.img_norm1 = nn.LayerNorm(dim, elementwise_affine=False, eps=eps)
+        self.img_norm1 = AdaLayerNorm(dim, elementwise_affine=False, eps=eps)
         self.attn = QwenImageCrossAttention(
             dim=dim,
             num_heads=num_attention_heads,
@@ -529,7 +529,7 @@ class QwenImageTransformerBlock(nn.Module):
             context_pre_only=False,
             head_dim=attention_head_dim,
         )
-        self.img_norm2 = nn.LayerNorm(dim, elementwise_affine=False, eps=eps)
+        self.img_norm2 = AdaLayerNorm(dim, elementwise_affine=False, eps=eps)
         self.img_mlp = FeedForward(dim=dim, dim_out=dim, activation_fn="gelu-approximate")
 
         # Text processing modules
@@ -604,9 +604,7 @@ class QwenImageTransformerBlock(nn.Module):
         txt_mod1, txt_mod2 = txt_mod_params.chunk(2, dim=-1)  # Each [B, 3*dim]
 
         # Process image stream - norm1 + modulation
-        # TODO: fix AdaLayerNorm to support modulate_index input then replace nn.LayerNorm of self.img_norm1
-        img_normed = self.img_norm1(hidden_states)
-        img_modulated, img_gate1 = self._modulate(img_normed, img_mod1, modulate_index)
+        img_modulated, img_gate1 = self.img_norm1(hidden_states, img_mod1, modulate_index)
 
         # Process text stream - norm1 + modulation
         txt_modulated, txt_gate1 = self.txt_norm1(encoder_hidden_states, txt_mod1)
@@ -634,9 +632,8 @@ class QwenImageTransformerBlock(nn.Module):
         encoder_hidden_states = encoder_hidden_states + txt_gate1 * txt_attn_output
 
         # Process image stream - norm2 + MLP
-        # TODO: fix AdaLayerNorm to support modulate_index input then replace nn.LayerNorm of self.img_norm2
-        img_normed2 = self.img_norm2(hidden_states)
-        img_modulated2, img_gate2 = self._modulate(img_normed2, img_mod2, modulate_index)
+        img_modulated2, img_gate2 = self.img_norm2(hidden_states, img_mod2, modulate_index)
+
         img_mlp_output = self.img_mlp(img_modulated2)
         hidden_states = hidden_states + img_gate2 * img_mlp_output
 
