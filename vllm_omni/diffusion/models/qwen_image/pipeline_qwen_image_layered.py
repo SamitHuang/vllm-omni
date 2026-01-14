@@ -212,7 +212,7 @@ class QwenImageLayeredPipeline(nn.Module, SupportImageInput):
             )
         ]
 
-        transformer_kwargs = get_transformer_config_kwargs(od_config.tf_model_config)
+        transformer_kwargs = get_transformer_config_kwargs(od_config.tf_model_config, QwenImageTransformer2DModel)
         self.transformer = QwenImageTransformer2DModel(
             od_config=od_config,
             **transformer_kwargs

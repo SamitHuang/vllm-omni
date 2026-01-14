@@ -275,7 +275,7 @@ class QwenImagePipeline(
         self.vae = AutoencoderKLQwenImage.from_pretrained(model, subfolder="vae", local_files_only=local_files_only).to(
             self.device
         )
-        transformer_kwargs = get_transformer_config_kwargs(od_config.tf_model_config)
+        transformer_kwargs = get_transformer_config_kwargs(od_config.tf_model_config, QwenImageTransformer2DModel)
         self.transformer = QwenImageTransformer2DModel(
             od_config=od_config,
             **transformer_kwargs
