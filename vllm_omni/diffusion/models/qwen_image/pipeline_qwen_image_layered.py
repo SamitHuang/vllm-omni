@@ -40,6 +40,7 @@ from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.model_executor.model_loader.weight_utils import (
     download_weights_from_hf_specific,
 )
+from vllm_omni.diffusion.utils.tf_utils import get_transformer_config_kwargs
 
 logger = logging.getLogger(__name__)
 
@@ -211,17 +212,10 @@ class QwenImageLayeredPipeline(nn.Module, SupportImageInput):
             )
         ]
 
-        use_additional_t_cond = od_config.tf_model_config.use_additional_t_cond
-        zero_cond_t = od_config.tf_model_config.zero_cond_t
-        use_layer3d_rope = od_config.tf_model_config.use_layer3d_rope
-        guidance_embeds = od_config.tf_model_config.guidance_embeds
-
+        transformer_kwargs = get_transformer_config_kwargs(od_config.tf_model_config)
         self.transformer = QwenImageTransformer2DModel(
             od_config=od_config,
-            use_additional_t_cond=use_additional_t_cond,
-            zero_cond_t=zero_cond_t,
-            use_layer3d_rope=use_layer3d_rope,
-            guidance_embeds=guidance_embeds,
+            **transformer_kwargs
         )
 
         # Pipeline configuration & processing parameters
