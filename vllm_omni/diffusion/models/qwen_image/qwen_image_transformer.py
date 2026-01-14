@@ -703,10 +703,6 @@ class QwenImageTransformer2DModel(CachedTransformer):
         use_layer3d_rope: bool = False,
     ):
         super().__init__()
-        # TODO: the following two lines can be removed after other qwen image related pipelines use the new TF config param parsing method
-        model_config = od_config.tf_model_config
-        num_layers = model_config.num_layers
-
         self.parallel_config = od_config.parallel_config
         self.in_channels = in_channels
         self.out_channels = out_channels or in_channels
