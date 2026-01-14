@@ -623,7 +623,7 @@ class QwenImageTransformerBlock(nn.Module):
             vid_freqs=image_rotary_emb[0],
             txt_freqs=image_rotary_emb[1],
             hidden_states_mask=hidden_states_mask,
-            encoder_hidden_states_mask=encoder_hidden_states_mask
+            encoder_hidden_states_mask=encoder_hidden_states_mask,
         )
 
         # QwenAttnProcessor2_0 returns (img_output, txt_output) when encoder_hidden_states is provided
