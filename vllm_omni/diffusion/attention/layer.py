@@ -37,6 +37,11 @@ class Attention(nn.Module):
     ):
         super().__init__()
         self.attn_backend = get_attn_backend(-1)
+        logger.info_once(
+            "Diffusion attention backend: %s (impl=%s)",
+            self.attn_backend.get_name(),
+            self.attn_backend.get_impl_cls().__name__,
+        )
         self.attn_impl_cls = self.attn_backend.get_impl_cls()
         self.attention = self.attn_impl_cls(
             num_heads=num_heads,
@@ -77,6 +82,13 @@ class Attention(nn.Module):
             scatter_idx=scatter_idx,
             gather_idx=gather_idx,
             use_sync=use_sync,
+        )
+
+        logger.info_once(
+            "Diffusion attention mode: %s (ring=%s backend_pref=%s)",
+            "ring" if self.use_ring else "local",
+            self.use_ring,
+            self.backend_pref,
         )
 
     def forward(
