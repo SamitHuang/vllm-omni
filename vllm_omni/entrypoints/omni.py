@@ -329,6 +329,7 @@ class OmniBase:
         )
 
         suggestions = [
+            f"Ignore this warning if the model weight download time is longer than {timeout}s.",
             "Verify GPU/device assignment in config (runtime.devices) is correct.",
             "Check GPU/host memory availability; reduce model or batch size if needed.",
             "Check model weights path and network reachability (if loading remotely).",
