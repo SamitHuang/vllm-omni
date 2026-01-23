@@ -337,7 +337,7 @@ class OmniBase:
 
         formatted_suggestions = "\n".join(f"  {i + 1}) {msg}" for i, msg in enumerate(suggestions))
 
-        logger.error(f"[{self._name}] Stage initialization failed. Troubleshooting Steps:\n{formatted_suggestions}")
+        logger.warning(f"[{self._name}] Stage initialization timeout. Troubleshooting Steps:\n{formatted_suggestions}")
 
     def start_profile(self, stages: list[int] | None = None) -> None:
         """Start profiling for specified stages.
