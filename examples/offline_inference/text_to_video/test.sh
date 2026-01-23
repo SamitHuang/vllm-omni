@@ -10,8 +10,8 @@ python text_to_video.py \
   --height 480 \
   --width 832 \
   --num_frames 33 \
-  --guidance_scale 1.0 \
-  --guidance_scale_high 1.0 \
+  --guidance_scale 4.0 \
+  --guidance_scale_high 4.0 \
   --boundary_ratio  0.875 \
   --num_inference_steps 40 \
   --fps 16 \
