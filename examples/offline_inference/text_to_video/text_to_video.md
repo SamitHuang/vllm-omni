@@ -13,6 +13,7 @@ python text_to_video.py \
   --num_frames 33 \
   --guidance_scale 4.0 \
   --guidance_scale_high 3.0 \
+  --flow_shift 12.0 \
   --num_inference_steps 40 \
   --fps 16 \
   --output t2v_out.mp4
