@@ -503,7 +503,6 @@ class Wan22Pipeline(nn.Module):
             )[0]
 
             if current_guidance_scale > 1.0 and negative_prompt_embeds is not None:
-                print("D--: computing CFG, current_guidance_scale:", current_guidance_scale)
                 noise_uncond = current_model(
                     hidden_states=latent_model_input,
                     timestep=timestep,
