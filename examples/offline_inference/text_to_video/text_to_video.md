@@ -29,5 +29,4 @@ Key arguments:
 - `--boundary_ratio`: Boundary split ratio for low/high DiT.
 - `--fps`: frames per second for the saved MP4 (requires `diffusers` export_to_video).
 - `--output`: path to save the generated video.
-
-For faster, lower-resolution runs (e.g., 480p), use `--flow_shift 12.0` (the default `5.0` is tuned for 720p).
+- `--enable-cpu-offload`: enable CPU offloading for diffusion models.
