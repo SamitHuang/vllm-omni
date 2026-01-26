@@ -33,6 +33,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--flow_shift", type=float, default=5.0, help="Scheduler flow_shift (5.0 for 720p, 12.0 for 480p)."
     )
+    parser.add_argument(
+        "--cache_backend",
+        type=str,
+        default=None,
+        choices=["cache_dit"],
+        help=(
+            "Cache backend to use for acceleration. "
+            "Options: 'cache_dit' (DBCache + SCM + TaylorSeer). "
+            "Default: None (no cache acceleration)."
+        ),
+    )
     parser.add_argument("--output", type=str, default="wan22_output.mp4", help="Path to save the video (mp4).")
     parser.add_argument("--fps", type=int, default=24, help="Frames per second for the output video.")
     parser.add_argument(
@@ -52,6 +63,24 @@ def main():
     vae_use_slicing = is_npu()
     vae_use_tiling = is_npu()
 
+    # Wan2.2 cache-dit tuning (from cache-dit examples and cache_alignment).
+    cache_config = None
+    if args.cache_backend == "cache_dit":
+        cache_config = {
+            # DBCache parameters [cache-dit only]
+            "Fn_compute_blocks": 1,  # Optimized for single-transformer models
+            "Bn_compute_blocks": 0,  # Number of backward compute blocks
+            "max_warmup_steps": 4,  # Maximum warmup steps (works for few-step models)
+            "residual_diff_threshold": 0.24,  # Higher threshold for more aggressive caching
+            "max_continuous_cached_steps": 3,  # Limit to prevent precision degradation
+            # TaylorSeer parameters [cache-dit only]
+            "enable_taylorseer": False,  # Disabled by default (not suitable for few-step models)
+            "taylorseer_order": 1,  # TaylorSeer polynomial order
+            # SCM (Step Computation Masking) parameters [cache-dit only]
+            "scm_steps_mask_policy": None,  # SCM mask policy: None (disabled), "slow", "medium", "fast", "ultra"
+            "scm_steps_policy": "dynamic",  # SCM steps policy: "dynamic" or "static"
+        }
+
     # Check if profiling is requested via environment variable
     profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))
 
@@ -61,6 +90,8 @@ def main():
         vae_use_tiling=vae_use_tiling,
         boundary_ratio=args.boundary_ratio,
         flow_shift=args.flow_shift,
+        cache_backend=args.cache_backend,
+        cache_config=cache_config,
         enable_cpu_offload=args.enable_cpu_offload,
     )
 
