@@ -76,11 +76,6 @@ def parse_args() -> argparse.Namespace:
         default=1,
         help="Number of GPUs used for ring sequence parallelism.",
     )
-    parser.add_argument(
-        "--enforce_eager",
-        action="store_true",
-        help="Disable torch.compile and force eager execution.",
-    )
     return parser.parse_args()
 
 
@@ -130,7 +125,6 @@ def main():
         cache_backend=args.cache_backend,
         cache_config=cache_config,
         enable_cache_dit_summary=args.enable_cache_dit_summary,
-        enforce_eager=args.enforce_eager,
         enable_cpu_offload=args.enable_cpu_offload,
         parallel_config=parallel_config,
         enforce_eager=args.enforce_eager,
