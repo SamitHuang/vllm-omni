@@ -334,6 +334,7 @@ class DiffusionEngine:
             pil_image=dummy_image,
             num_inference_steps=num_inference_steps,
             num_outputs_per_prompt=1,
+            skip_cache_refresh=True,
         )
         logger.info("dummy run to warm up the model")
         requests = self.pre_process_func([req]) if self.pre_process_func is not None else [req]

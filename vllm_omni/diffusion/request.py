@@ -162,6 +162,9 @@ class OmniDiffusionRequest:
     # debugging
     debug: bool = False
 
+    # cache behavior
+    skip_cache_refresh: bool = False
+
     # results
     output: torch.Tensor | None = None
 

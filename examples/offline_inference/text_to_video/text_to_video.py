@@ -44,8 +44,18 @@ def parse_args() -> argparse.Namespace:
             "Default: None (no cache acceleration)."
         ),
     )
+    parser.add_argument(
+        "--enable-cache-dit-summary",
+        action="store_true",
+        help="Enable cache-dit summary logging after diffusion forward passes.",
+    )
     parser.add_argument("--output", type=str, default="wan22_output.mp4", help="Path to save the video (mp4).")
     parser.add_argument("--fps", type=int, default=24, help="Frames per second for the output video.")
+    parser.add_argument(
+        "--enforce_eager",
+        action="store_true",
+        help="Disable torch.compile and force eager execution.",
+    )
     parser.add_argument(
         "--enable-cpu-offload",
         action="store_true",
@@ -71,6 +81,7 @@ def main():
             "Fn_compute_blocks": 1,  # Optimized for single-transformer models
             "Bn_compute_blocks": 0,  # Number of backward compute blocks
             "max_warmup_steps": 4,  # Maximum warmup steps (works for few-step models)
+            "max_cached_steps": 20,
             "residual_diff_threshold": 0.24,  # Higher threshold for more aggressive caching
             "max_continuous_cached_steps": 3,  # Limit to prevent precision degradation
             # TaylorSeer parameters [cache-dit only]
@@ -92,6 +103,8 @@ def main():
         flow_shift=args.flow_shift,
         cache_backend=args.cache_backend,
         cache_config=cache_config,
+        enable_cache_dit_summary=args.enable_cache_dit_summary,
+        enforce_eager=args.enforce_eager,
         enable_cpu_offload=args.enable_cpu_offload,
     )
 
