@@ -28,9 +28,11 @@ from vllm_omni.diffusion.distributed.parallel_state import (
     initialize_model_parallel,
 )
 from vllm_omni.diffusion.forward_context import set_forward_context
+from vllm_omni.diffusion.lora.manager import DiffusionLoRAManager
 from vllm_omni.diffusion.profiler import CurrentProfiler
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.diffusion.worker.gpu_diffusion_model_runner import GPUDiffusionModelRunner
+from vllm_omni.lora.request import LoRARequest
 
 logger = init_logger(__name__)
 
@@ -61,6 +63,7 @@ class GPUDiffusionWorker:
         self.vllm_config: VllmConfig | None = None
         self.model_runner: GPUDiffusionModelRunner | None = None
         self._sleep_saved_buffers: dict[str, torch.Tensor] = {}
+        self.lora_manager: DiffusionLoRAManager | None = None
         self.init_device()
 
     def init_device(self) -> None:
@@ -110,11 +113,20 @@ class GPUDiffusionWorker:
         self.model_runner.load_model(
             memory_pool_context_fn=self._maybe_get_memory_pool_context,
         )
+        assert self.model_runner.pipeline is not None
+        self.lora_manager = DiffusionLoRAManager(
+            pipeline=self.model_runner.pipeline,
+            device=self.device,
+            dtype=self.od_config.dtype,
+            max_cached_adapters=self.od_config.max_cpu_loras,
+            lora_path=self.od_config.lora_path,
+            lora_scale=self.od_config.lora_scale,
+        )
         logger.info(f"Worker {self.rank}: Initialization complete.")
 
-    def generate(self, requests: list[OmniDiffusionRequest]) -> DiffusionOutput:
+    def generate(self, request: OmniDiffusionRequest) -> DiffusionOutput:
         """Generate output for the given requests."""
-        return self.execute_model(requests, self.od_config)
+        return self.execute_model(request, self.od_config)
 
     @classmethod
     def start_profile(cls, trace_path_template: str) -> str:
@@ -126,15 +138,34 @@ class GPUDiffusionWorker:
         """Stop profiling and return the result dictionary."""
         return CurrentProfiler.stop()
 
-    def execute_model(self, reqs: list[OmniDiffusionRequest], od_config: OmniDiffusionConfig) -> DiffusionOutput:
+    def execute_model(self, req: OmniDiffusionRequest, od_config: OmniDiffusionConfig) -> DiffusionOutput:
         """Execute a forward pass by delegating to the model runner."""
         assert self.model_runner is not None, "Model runner not initialized"
-        return self.model_runner.execute_model(reqs)
+        if self.lora_manager is not None:
+            try:
+                self.lora_manager.set_active_adapter(req.sampling_params.lora_request, req.sampling_params.lora_scale)
+            except Exception as exc:
+                if req.sampling_params.lora_request is not None:
+                    raise
+                logger.warning("LoRA activation skipped: %s", exc)
+        return self.model_runner.execute_model(req)
 
     def load_weights(self, weights) -> set[str]:
         """Load weights by delegating to the model runner."""
         assert self.model_runner is not None, "Model runner not initialized"
         return self.model_runner.load_weights(weights)
+
+    def remove_lora(self, adapter_id: int) -> bool:
+        return self.lora_manager.remove_adapter(adapter_id)
+
+    def add_lora(self, lora_request: LoRARequest, lora_scale: float = 1.0) -> bool:
+        return self.lora_manager.add_adapter(lora_request, lora_scale)
+
+    def list_loras(self) -> list[int]:
+        return self.lora_manager.list_adapters()
+
+    def pin_lora(self, adapter_id: int) -> bool:
+        return self.lora_manager.pin_adapter(adapter_id)
 
     def sleep(self, level: int = 1) -> bool:
         """
@@ -309,7 +340,7 @@ class WorkerProc:
                 except Exception as e:
                     logger.error(f"Error processing RPC: {e}", exc_info=True)
                     if self.result_mq is not None:
-                        self.return_result({"status": "error", "error": str(e)})
+                        self.return_result(DiffusionOutput(error=str(e)))
 
             elif isinstance(msg, dict) and msg.get("type") == "shutdown":
                 logger.info("Worker %s: Received shutdown message", self.gpu_id)

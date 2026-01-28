@@ -3,12 +3,15 @@
 
 import argparse
 import os
+import time
 from pathlib import Path
 
 import numpy as np
 import torch
 
+from vllm_omni.diffusion.data import DiffusionParallelConfig
 from vllm_omni.entrypoints.omni import Omni
+from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 from vllm_omni.outputs import OmniRequestOutput
 from vllm_omni.utils.platform_utils import detect_device_type, is_npu
 
@@ -61,6 +64,23 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Enable CPU offloading for diffusion models.",
     )
+    parser.add_argument(
+        "--ulysses_degree",
+        type=int,
+        default=1,
+        help="Number of GPUs used for ulysses sequence parallelism.",
+    )
+    parser.add_argument(
+        "--ring_degree",
+        type=int,
+        default=1,
+        help="Number of GPUs used for ring sequence parallelism.",
+    )
+    parser.add_argument(
+        "--enforce_eager",
+        action="store_true",
+        help="Disable torch.compile and force eager execution.",
+    )
     return parser.parse_args()
 
 
@@ -91,6 +111,12 @@ def main():
             "scm_steps_mask_policy": None,  # SCM mask policy: None (disabled), "slow", "medium", "fast", "ultra"
             "scm_steps_policy": "dynamic",  # SCM steps policy: "dynamic" or "static"
         }
+    # Configure parallel settings (only SP is supported for Wan)
+    # Note: cfg_parallel and tensor_parallel are not implemented for Wan models
+    parallel_config = DiffusionParallelConfig(
+        ulysses_degree=args.ulysses_degree,
+        ring_degree=args.ring_degree,
+    )
 
     # Check if profiling is requested via environment variable
     profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))
@@ -106,23 +132,45 @@ def main():
         enable_cache_dit_summary=args.enable_cache_dit_summary,
         enforce_eager=args.enforce_eager,
         enable_cpu_offload=args.enable_cpu_offload,
+        parallel_config=parallel_config,
+        enforce_eager=args.enforce_eager,
     )
 
     if profiler_enabled:
         print("[Profiler] Starting profiling...")
         omni.start_profile()
 
+    # Print generation configuration
+    print(f"\n{'=' * 60}")
+    print("Generation Configuration:")
+    print(f"  Model: {args.model}")
+    print(f"  Inference steps: {args.num_inference_steps}")
+    print(f"  Frames: {args.num_frames}")
+    print(f"  Parallel configuration: ulysses_degree={args.ulysses_degree}, ring_degree={args.ring_degree}")
+    print(f"  Video size: {args.width}x{args.height}")
+    print(f"{'=' * 60}\n")
+
+    generation_start = time.perf_counter()
     frames = omni.generate(
-        args.prompt,
-        negative_prompt=args.negative_prompt,
-        height=args.height,
-        width=args.width,
-        generator=generator,
-        guidance_scale=args.guidance_scale,
-        guidance_scale_2=args.guidance_scale_high,
-        num_inference_steps=args.num_inference_steps,
-        num_frames=args.num_frames,
+        {
+            "prompt": args.prompt,
+            "negative_prompt": args.negative_prompt,
+        },
+        OmniDiffusionSamplingParams(
+            height=args.height,
+            width=args.width,
+            generator=generator,
+            guidance_scale=args.guidance_scale,
+            guidance_scale_2=args.guidance_scale_high,
+            num_inference_steps=args.num_inference_steps,
+            num_frames=args.num_frames,
+        ),
     )
+    generation_end = time.perf_counter()
+    generation_time = generation_end - generation_start
+
+    # Print profiling results
+    print(f"Total generation time: {generation_time:.4f} seconds ({generation_time * 1000:.2f} ms)")
 
     # Extract video frames from OmniRequestOutput
     if isinstance(frames, list) and len(frames) > 0:
