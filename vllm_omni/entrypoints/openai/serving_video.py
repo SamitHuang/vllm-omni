@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import time
+import uuid
 from http import HTTPStatus
 from typing import Any, cast
 
@@ -66,7 +67,7 @@ class OmniOpenAIServingVideo:
                 detail="Streaming video generation is not supported yet.",
             )
 
-        request_id = f"video_gen_{int(time.time())}"
+        request_id = f"video_gen_{uuid.uuid4().hex}"
         model_name = self._resolve_model_name(raw_request)
 
         if request.model is not None and model_name is not None and request.model != model_name:
@@ -362,10 +363,20 @@ class OmniOpenAIServingVideo:
     def _normalize_video_outputs(videos: Any) -> list[Any]:
         if videos is None:
             return []
+        if hasattr(videos, "ndim") and videos.ndim == 5:
+            return [videos[i] for i in range(videos.shape[0])]
         if isinstance(videos, list):
             if not videos:
                 return []
             first = videos[0]
+            if hasattr(first, "ndim") and first.ndim == 5:
+                flattened: list[Any] = []
+                for item in videos:
+                    if hasattr(item, "ndim") and item.ndim == 5:
+                        flattened.extend([item[i] for i in range(item.shape[0])])
+                    else:
+                        flattened.append(item)
+                return flattened
             if isinstance(first, list):
                 return videos
             if hasattr(first, "ndim") and first.ndim == 3:

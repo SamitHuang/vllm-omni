@@ -20,11 +20,7 @@ def _normalize_video_tensor(video_tensor: torch.Tensor) -> np.ndarray:
     """Normalize a torch video tensor into a numpy array of frames (F, H, W, C)."""
     video_tensor = video_tensor.detach().cpu()
     if video_tensor.dim() == 5:
-        # [B, C, F, H, W] or [B, F, H, W, C]
-        if video_tensor.shape[1] in (3, 4):
-            video_tensor = video_tensor[0].permute(1, 2, 3, 0)
-        else:
-            video_tensor = video_tensor[0]
+        raise ValueError("Batched video tensors are not supported for single-video encoding.")
     elif video_tensor.dim() == 4 and video_tensor.shape[0] in (3, 4):
         # [C, F, H, W] -> [F, H, W, C]
         video_tensor = video_tensor.permute(1, 2, 3, 0)
@@ -32,13 +28,13 @@ def _normalize_video_tensor(video_tensor: torch.Tensor) -> np.ndarray:
     if video_tensor.is_floating_point():
         video_tensor = video_tensor.clamp(-1, 1) * 0.5 + 0.5
     video_array = video_tensor.float().numpy()
-    return _normalize_video_array(video_array)
+    return _normalize_single_video_array(video_array)
 
 
-def _normalize_video_array(video_array: np.ndarray) -> np.ndarray:
-    """Normalize a numpy video array into shape (F, H, W, C)."""
+def _normalize_single_video_array(video_array: np.ndarray) -> np.ndarray:
+    """Normalize a single video array into shape (F, H, W, C)."""
     if video_array.ndim == 5:
-        video_array = video_array[0]
+        raise ValueError("Batched video arrays are not supported for single-video encoding.")
 
     if video_array.ndim == 4:
         # Convert channel-first layouts to channel-last
@@ -53,6 +49,16 @@ def _normalize_video_array(video_array: np.ndarray) -> np.ndarray:
     elif np.issubdtype(video_array.dtype, np.integer):
         video_array = video_array.astype(np.float32) / 255.0
     return video_array
+
+
+def _normalize_video_array(video_array: np.ndarray) -> list[np.ndarray] | np.ndarray:
+    """Normalize a numpy video array into shape (F, H, W, C).
+
+    If a batch dimension is present, returns a list of per-video arrays.
+    """
+    if video_array.ndim == 5:
+        return [_normalize_single_video_array(video_array[i]) for i in range(video_array.shape[0])]
+    return _normalize_single_video_array(video_array)
 
 
 def _normalize_frames(frames: list[Any]) -> list[np.ndarray]:
@@ -88,6 +94,8 @@ def _coerce_video_to_frames(video: Any) -> list[np.ndarray]:
         return list(video_array)
     if isinstance(video, np.ndarray):
         video_array = _normalize_video_array(video)
+        if isinstance(video_array, list):
+            raise ValueError("Batched video arrays must be split before encoding.")
         if video_array.ndim == 4:
             return list(video_array)
         if video_array.ndim == 3:
