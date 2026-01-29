@@ -1,6 +1,8 @@
 #!/bin/bash
 # Wan2.2 text-to-video curl example
 
+OUTPUT_PATH="wan22_output.mp4"
+
 curl -X POST http://localhost:8091/v1/videos/generations \
   -H "Content-Type: application/json" \
   -d '{
@@ -9,9 +11,12 @@ curl -X POST http://localhost:8091/v1/videos/generations \
     "height": 480,
     "width": 832,
     "num_frames": 33,
-    "fps": 24,
+    "fps": 16,
     "num_inference_steps": 40,
     "guidance_scale": 4.0,
     "guidance_scale_2": 4.0,
+    "boundary_ratio": 0.875,
     "seed": 42
-  }' | jq -r '.data[0].b64_json' | base64 -d > wan22_output.mp4
+  }' | jq -r '.data[0].b64_json' | base64 -d > "${OUTPUT_PATH}"
+
+echo "Saved video to ${OUTPUT_PATH}"

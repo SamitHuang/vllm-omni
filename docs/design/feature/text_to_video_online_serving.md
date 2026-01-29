@@ -1,16 +1,16 @@
-# Wan2.2 Online Video Serving Design
+# Text-to-Video Online Serving Design
 
 ## Summary
-This document describes the OpenAI-style video generation API added for Wan2.2
-and the shared diffusion serving path that can be reused by other diffusion
-video models. The design focuses on a stable external API, extensible request
-schema, and a handler that routes to either pure diffusion or multi-stage
-pipelines.
+This document describes the OpenAI-style text-to-video generation API
+introduced for Wan2.2 and the shared diffusion serving path that can be reused
+by other text-to-video models. The design focuses on a stable external API,
+extensible request schema, and a handler that routes to either pure diffusion
+or multi-stage pipelines.
 
 ## Goals
 - Provide `/v1/videos/generations` for text-to-video generation.
 - Keep request/response compatible with OpenAI-style conventions.
-- Make the request schema extensible for future diffusion video models.
+- Make the request schema extensible for future text-to-video diffusion models.
 - Reuse existing diffusion execution and sampling parameters.
 
 ## Non-goals

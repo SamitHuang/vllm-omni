@@ -104,13 +104,31 @@ class OmniOpenAIServingVideo:
             gen_params.true_cfg_scale = request.true_cfg_scale
         if request.seed is not None:
             gen_params.seed = request.seed
-        if request.boundary_ratio is not None:
-            gen_params.boundary_ratio = request.boundary_ratio
+        boundary_ratio = request.boundary_ratio
+        if boundary_ratio is None:
+            boundary_ratio = extra_body.get("boundary_ratio")
+        if boundary_ratio is not None:
+            gen_params.boundary_ratio = boundary_ratio
+
+        logger.info(
+            "Boundary ratio parse: request=%s extra_body=%s gen_params=%s",
+            request.boundary_ratio,
+            extra_body.get("boundary_ratio"),
+            gen_params.boundary_ratio,
+        )
         if request.flow_shift is not None:
             gen_params.extra_args["flow_shift"] = request.flow_shift
 
         self._apply_extra_body(extra_body, gen_params)
         self._apply_lora(request.lora or extra_body.get("lora"), gen_params)
+
+        logger.info(
+            "Video sampling params: steps=%s guidance=%s guidance_2=%s seed=%s",
+            gen_params.num_inference_steps,
+            gen_params.guidance_scale,
+            gen_params.guidance_scale_2,
+            gen_params.seed,
+        )
 
         result = await self._run_generation(prompt, gen_params, request_id, raw_request)
         videos = self._extract_video_outputs(result)
