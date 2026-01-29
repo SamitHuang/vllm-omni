@@ -79,8 +79,13 @@ from vllm_omni.entrypoints.openai.protocol.images import (
     ImageGenerationRequest,
     ImageGenerationResponse,
 )
+from vllm_omni.entrypoints.openai.protocol.videos import (
+    VideoGenerationRequest,
+    VideoGenerationResponse,
+)
 from vllm_omni.entrypoints.openai.serving_chat import OmniOpenAIServingChat
 from vllm_omni.entrypoints.openai.serving_speech import OmniOpenAIServingSpeech
+from vllm_omni.entrypoints.openai.serving_video import OmniOpenAIServingVideo
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams, OmniSamplingParams, OmniTextPrompt
 from vllm_omni.lora.request import LoRARequest
 from vllm_omni.lora.utils import stable_lora_int_id
@@ -373,6 +378,12 @@ async def omni_init_app_state(
             diffusion_engine=engine_client,  # type: ignore
             model_name=model_name,
         )
+        diffusion_stage_configs = engine_client.stage_configs if hasattr(engine_client, "stage_configs") else None
+        state.openai_serving_video = OmniOpenAIServingVideo.for_diffusion(
+            diffusion_engine=engine_client,  # type: ignore
+            model_name=model_name,
+            stage_configs=diffusion_stage_configs,
+        )
 
         state.enable_server_load_tracking = getattr(args, "enable_server_load_tracking", False)
         state.server_load_metrics = 0
@@ -655,6 +666,11 @@ async def omni_init_app_state(
     state.openai_serving_speech = OmniOpenAIServingSpeech(
         engine_client, state.openai_serving_models, request_logger=request_logger
     )
+    state.openai_serving_video = OmniOpenAIServingVideo(
+        engine_client,
+        model_name=served_model_names[0] if served_model_names else None,
+        stage_configs=state.stage_configs,
+    )
 
     state.enable_server_load_tracking = args.enable_server_load_tracking
     state.server_load_metrics = 0
@@ -666,6 +682,10 @@ def Omnichat(request: Request) -> OmniOpenAIServingChat | None:
 
 def Omnispeech(request: Request) -> OmniOpenAIServingSpeech | None:
     return request.app.state.openai_serving_speech
+
+
+def Omnivideo(request: Request) -> OmniOpenAIServingVideo | None:
+    return request.app.state.openai_serving_video
 
 
 @router.post(
@@ -1064,4 +1084,35 @@ async def generate_images(request: ImageGenerationRequest, raw_request: Request)
         logger.exception(f"Image generation failed: {e}")
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=f"Image generation failed: {str(e)}"
+        )
+
+
+@router.post(
+    "/v1/videos/generations",
+    dependencies=[Depends(validate_json_request)],
+    responses={
+        HTTPStatus.OK.value: {"model": VideoGenerationResponse},
+        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+        HTTPStatus.SERVICE_UNAVAILABLE.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+    },
+)
+async def generate_videos(request: VideoGenerationRequest, raw_request: Request) -> VideoGenerationResponse:
+    """Generate videos from text prompts using diffusion models."""
+    handler = Omnivideo(raw_request)
+    if handler is None:
+        raise HTTPException(
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE.value,
+            detail="Video generation handler not initialized.",
+        )
+    logger.info("Video generation handler: %s", type(handler).__name__)
+    try:
+        return await handler.generate_videos(request, raw_request)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Video generation failed: %s", e)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
+            detail=f"Video generation failed: {str(e)}",
         )
