@@ -238,7 +238,6 @@ class AsyncOmni(OmniBase):
         prompt: OmniPromptType,
         request_id: str,
         sampling_params_list: Sequence[OmniSamplingParams] | None = None,
-        sampling_params: OmniSamplingParams | None = None,
         *,
         output_modalities: list[str] | None = None,
     ) -> AsyncGenerator[OmniRequestOutput, None]:
@@ -257,8 +256,6 @@ class AsyncOmni(OmniBase):
             sampling_params_list: List of SamplingParams, one for each stage.
                 Must have the same length as the number of stages.
                 If None, uses default sampling params for each stage.
-            sampling_params: Single sampling params entry (compatibility alias).
-                If provided, it will be wrapped into a list.
             output_modalities: Optional list of output modalities.
 
         Yields:
@@ -279,10 +276,6 @@ class AsyncOmni(OmniBase):
             self._run_output_handler()
 
             # TODO: lora_request, trace_headers, priority are not supported yet
-            if sampling_params is not None:
-                if sampling_params_list is not None:
-                    raise ValueError("Provide either sampling_params_list or sampling_params, not both.")
-                sampling_params_list = [sampling_params]
             if sampling_params_list is None:
                 sampling_params_list = self.default_sampling_params_list
 
