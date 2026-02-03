@@ -352,6 +352,12 @@ class Wan22I2VPipeline(nn.Module, SupportImageInput):
         self._guidance_scale = guidance_low
         self._guidance_scale_2 = guidance_high
 
+        boundary_ratio = (
+            self.boundary_ratio
+            if self.boundary_ratio is not None
+            else req.sampling_params.boundary_ratio
+        )
+
         # Validate inputs
         self.check_inputs(
             prompt=prompt,
@@ -362,7 +368,8 @@ class Wan22I2VPipeline(nn.Module, SupportImageInput):
             prompt_embeds=prompt_embeds,
             negative_prompt_embeds=negative_prompt_embeds,
             image_embeds=image_embeds,
-            guidance_scale_2=guidance_high if self.boundary_ratio is not None else None,
+            guidance_scale_2=guidance_high if boundary_ratio is not None else None,
+            boundary_ratio=boundary_ratio,
         )
 
         # Adjust num_frames to be compatible with VAE temporal scaling
@@ -415,8 +422,8 @@ class Wan22I2VPipeline(nn.Module, SupportImageInput):
         self._num_timesteps = len(timesteps)
 
         boundary_timestep = None
-        if self.boundary_ratio is not None:
-            boundary_timestep = self.boundary_ratio * self.scheduler.config.num_train_timesteps
+        if boundary_ratio is not None:
+            boundary_timestep = boundary_ratio * self.scheduler.config.num_train_timesteps
 
         # Prepare latents (use out_channels=16 for VAE latent, not in_channels=36)
         num_channels_latents = self.transformer.config.out_channels
@@ -720,6 +727,7 @@ class Wan22I2VPipeline(nn.Module, SupportImageInput):
         negative_prompt_embeds=None,
         image_embeds=None,
         guidance_scale_2=None,
+        boundary_ratio=None,
     ):
         if image is None and image_embeds is None:
             raise ValueError("Provide either `image` or `image_embeds`. Cannot leave both undefined.")
@@ -741,7 +749,7 @@ class Wan22I2VPipeline(nn.Module, SupportImageInput):
         if prompt is None and prompt_embeds is None:
             raise ValueError("Provide either `prompt` or `prompt_embeds`.")
 
-        if self.boundary_ratio is None and guidance_scale_2 is not None:
+        if boundary_ratio is None and guidance_scale_2 is not None:
             raise ValueError("`guidance_scale_2` is only supported when `boundary_ratio` is set.")
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:

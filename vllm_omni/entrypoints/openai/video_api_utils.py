@@ -7,6 +7,7 @@ Shared helper utilities for OpenAI-compatible video generation API.
 from __future__ import annotations
 
 import base64
+from io import BytesIO
 import os
 import tempfile
 from typing import Any
@@ -14,6 +15,27 @@ from typing import Any
 import numpy as np
 import torch
 from PIL import Image
+
+
+def decode_input_reference(
+    input_reference: str | None, input_reference_bytes: bytes | None
+) -> Image.Image | None:
+    """Decode image input from multipart bytes or base64/data URL."""
+    if input_reference and input_reference_bytes:
+        raise ValueError("Provide input_reference either as file upload or base64, not both.")
+    if input_reference_bytes:
+        return Image.open(BytesIO(input_reference_bytes)).convert("RGB")
+    if input_reference:
+        if input_reference.startswith("data:image"):
+            _, b64_data = input_reference.split(",", 1)
+        else:
+            b64_data = input_reference
+        try:
+            image_bytes = base64.b64decode(b64_data)
+        except Exception as exc:  # pragma: no cover - malformed base64
+            raise ValueError("Invalid base64 input_reference.") from exc
+        return Image.open(BytesIO(image_bytes)).convert("RGB")
+    return None
 
 
 def _normalize_video_tensor(video_tensor: torch.Tensor) -> np.ndarray:
@@ -27,7 +49,9 @@ def _normalize_video_tensor(video_tensor: torch.Tensor) -> np.ndarray:
 
     if video_tensor.is_floating_point():
         video_tensor = video_tensor.clamp(-1, 1) * 0.5 + 0.5
-    video_array = video_tensor.float().numpy()
+    else:
+        video_tensor = video_tensor.to(torch.float32) / 255.0
+    video_array = video_tensor.numpy()
     return _normalize_single_video_array(video_array)
 
 

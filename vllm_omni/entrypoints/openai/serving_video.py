@@ -21,7 +21,7 @@ from vllm_omni.entrypoints.openai.protocol.videos import (
     VideoGenerationRequest,
     VideoGenerationResponse,
 )
-from vllm_omni.entrypoints.openai.video_api_utils import encode_video_base64
+from vllm_omni.entrypoints.openai.video_api_utils import decode_input_reference, encode_video_base64
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams, OmniSamplingParams, OmniTextPrompt
 from vllm_omni.lora.request import LoRARequest
 from vllm_omni.lora.utils import stable_lora_int_id
@@ -59,7 +59,11 @@ class OmniOpenAIServingVideo:
         )
 
     async def generate_videos(
-        self, request: VideoGenerationRequest, raw_request: Request | None = None
+        self,
+        request: VideoGenerationRequest,
+        raw_request: Request | None = None,
+        *,
+        input_reference_bytes: bytes | None = None,
     ) -> VideoGenerationResponse:
         if request.stream:
             raise HTTPException(
@@ -82,6 +86,17 @@ class OmniOpenAIServingVideo:
         prompt: OmniTextPrompt = {"prompt": request.prompt}
         if request.negative_prompt is not None:
             prompt["negative_prompt"] = request.negative_prompt
+
+        input_image = None
+        try:
+            input_image = decode_input_reference(request.input_reference, input_reference_bytes)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST.value,
+                detail=str(exc),
+            ) from exc
+        if input_image is not None:
+            prompt["multi_modal_data"] = {"image": input_image}
 
         gen_params = OmniDiffusionSamplingParams(num_outputs_per_prompt=request.n)
 

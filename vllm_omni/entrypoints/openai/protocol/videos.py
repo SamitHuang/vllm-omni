@@ -58,6 +58,12 @@ class VideoGenerationRequest(BaseModel):
     # Video params block for extensibility
     video_params: VideoParams | None = Field(default=None, description="Optional video-specific parameters")
 
+    # Image-to-video input (OpenAI-style name)
+    input_reference: str | None = Field(
+        default=None,
+        description="Image input for I2V; provided via multipart form-data as a file upload.",
+    )
+
     # Video-specific fields (top-level for OpenAI-style compatibility)
     width: int | None = Field(default=None, ge=1, description="Video width in pixels")
     height: int | None = Field(default=None, ge=1, description="Video height in pixels")
