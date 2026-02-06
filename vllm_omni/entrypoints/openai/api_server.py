@@ -1088,21 +1088,6 @@ async def generate_images(request: ImageGenerationRequest, raw_request: Request)
         )
 
 
-@router.post(
-    "/v1/videos/generations",
-    dependencies=[Depends(validate_json_request)],
-    responses={
-        HTTPStatus.OK.value: {"model": VideoGenerationResponse},
-        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
-        HTTPStatus.SERVICE_UNAVAILABLE.value: {"model": ErrorResponse},
-        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
-    },
-)
-async def generate_videos(request: VideoGenerationRequest, raw_request: Request) -> VideoGenerationResponse:
-    """Generate videos from text prompts using diffusion models."""
-    return await _run_video_generation(request, raw_request)
-
-
 def _parse_form_json(value: str | None) -> Any:
     if value is None or value == "":
         return None
@@ -1155,6 +1140,7 @@ async def create_video(
     input_reference: UploadFile | None = File(default=None),
     model: str | None = Form(default=None),
     n: int | None = Form(default=None),
+    seconds: int | None = Form(default=None),
     size: str | None = Form(default=None),
     response_format: str | None = Form(default=None),
     user: str | None = Form(default=None),
@@ -1178,6 +1164,7 @@ async def create_video(
     request_data: dict[str, Any] = {
         "prompt": prompt,
         "model": model,
+        "seconds": seconds,
         "size": size,
         "user": user,
         "response_format": response_format,

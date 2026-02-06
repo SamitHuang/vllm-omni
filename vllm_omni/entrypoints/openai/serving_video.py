@@ -173,6 +173,7 @@ class OmniOpenAIServingVideo:
         height = request.height or (request.video_params.height if request.video_params else None)
         num_frames = request.num_frames or (request.video_params.num_frames if request.video_params else None)
         fps = request.fps or (request.video_params.fps if request.video_params else None)
+        seconds = request.seconds
 
         size = request.size or extra_body.get("size")
         if size:
@@ -186,6 +187,14 @@ class OmniOpenAIServingVideo:
             num_frames = extra_body.get("num_frames")
         if fps is None:
             fps = extra_body.get("fps")
+        if seconds is None:
+            seconds = extra_body.get("seconds")
+
+        if num_frames is None and seconds is not None:
+            if fps is None:
+                # Match OpenAI semantics: seconds implies a full clip length.
+                fps = 24
+            num_frames = int(seconds) * int(fps)
 
         return width, height, num_frames, fps
 
@@ -230,6 +239,7 @@ class OmniOpenAIServingVideo:
             "model",
             "prompt",
             "n",
+            "seconds",
             "size",
             "width",
             "height",

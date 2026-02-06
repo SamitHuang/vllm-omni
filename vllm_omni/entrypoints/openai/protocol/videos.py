@@ -45,6 +45,10 @@ class VideoGenerationRequest(BaseModel):
         description="Model to use (optional, uses server's configured model if omitted)",
     )
     n: int = Field(default=1, ge=1, le=4, description="Number of videos to generate")
+    seconds: int | str | None = Field(
+        default=None,
+        description="Clip duration in seconds (OpenAI-compatible, e.g., 4, 8, 12)",
+    )
     size: str | None = Field(
         default=None,
         description="Video dimensions in WIDTHxHEIGHT format (e.g., '1280x720')",
@@ -137,6 +141,19 @@ class VideoGenerationRequest(BaseModel):
         if v is not None and v != VideoResponseFormat.B64_JSON:
             raise ValueError(f"Only 'b64_json' response format is supported, got: {v}")
         return v
+
+    @field_validator("seconds")
+    @classmethod
+    def validate_seconds(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            if not v.isdigit():
+                raise ValueError("seconds must be an integer or numeric string")
+            return int(v)
+        if isinstance(v, int):
+            return v
+        raise ValueError("seconds must be an integer or numeric string")
 
 
 class VideoData(BaseModel):

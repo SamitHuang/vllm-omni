@@ -2,7 +2,7 @@
 # Wan2.2 online serving startup script
 
 MODEL="${MODEL:-Wan-AI/Wan2.2-T2V-A14B-Diffusers}"
-PORT="${PORT:-8091}"
+PORT="${PORT:-8098}"
 BOUNDARY_RATIO="${BOUNDARY_RATIO:-0.875}"
 FLOW_SHIFT="${FLOW_SHIFT:-5.0}"
 CACHE_BACKEND="${CACHE_BACKEND:-none}"

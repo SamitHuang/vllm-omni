@@ -361,6 +361,10 @@ class Wan22Pipeline(nn.Module):
         # Prefer engine-configured boundary_ratio, but allow per-request fallback.
         boundary_ratio = self.boundary_ratio if self.boundary_ratio is not None else req.sampling_params.boundary_ratio
 
+        if boundary_ratio is None:
+            boundary_ratio = 0.875
+            logger.warning("boundary_ratio is required for T2V generation. using default value 0.875")
+
         # validate shapes
         self.check_inputs(
             prompt=prompt,

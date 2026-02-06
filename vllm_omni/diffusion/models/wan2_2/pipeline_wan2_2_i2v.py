@@ -357,6 +357,9 @@ class Wan22I2VPipeline(nn.Module, SupportImageInput):
             if self.boundary_ratio is not None
             else req.sampling_params.boundary_ratio
         )
+        if boundary_ratio is None:
+            boundary_ratio = 0.875
+            logger.warning("boundary_ratio is required for I2V generation. using default value 0.875")
 
         # Validate inputs
         self.check_inputs(
