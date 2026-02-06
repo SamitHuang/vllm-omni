@@ -7,9 +7,9 @@ Shared helper utilities for OpenAI-compatible video generation API.
 from __future__ import annotations
 
 import base64
-from io import BytesIO
 import os
 import tempfile
+from io import BytesIO
 from typing import Any
 
 import numpy as np
@@ -17,9 +17,7 @@ import torch
 from PIL import Image
 
 
-def decode_input_reference(
-    input_reference: str | None, input_reference_bytes: bytes | None
-) -> Image.Image | None:
+def decode_input_reference(input_reference: str | None, input_reference_bytes: bytes | None) -> Image.Image | None:
     """Decode image input from multipart bytes or base64/data URL."""
     if input_reference and input_reference_bytes:
         raise ValueError("Provide input_reference either as file upload or base64, not both.")
