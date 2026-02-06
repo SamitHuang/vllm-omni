@@ -352,11 +352,7 @@ class Wan22I2VPipeline(nn.Module, SupportImageInput):
         self._guidance_scale = guidance_low
         self._guidance_scale_2 = guidance_high
 
-        boundary_ratio = (
-            self.boundary_ratio
-            if self.boundary_ratio is not None
-            else req.sampling_params.boundary_ratio
-        )
+        boundary_ratio = self.boundary_ratio if self.boundary_ratio is not None else req.sampling_params.boundary_ratio
         if boundary_ratio is None:
             boundary_ratio = 0.875
             logger.warning("boundary_ratio is required for I2V generation. using default value 0.875")
