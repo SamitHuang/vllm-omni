@@ -81,4 +81,3 @@ curl -X POST http://localhost:8091/v1/videos \
   -F "flow_shift=12.0" \
   -F "seed=42"
 ```
-
