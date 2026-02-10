@@ -11,8 +11,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from PIL import Image
+from pydantic import ValidationError
 
 from vllm_omni.entrypoints.openai.api_server import router
+from vllm_omni.entrypoints.openai.protocol.videos import VideoGenerationRequest, VideoResponseFormat
 from vllm_omni.entrypoints.openai.serving_video import OmniOpenAIServingVideo
 
 
@@ -115,3 +117,232 @@ def test_i2v_video_generation_form(test_client):
     input_image = prompt["multi_modal_data"]["image"]
     assert isinstance(input_image, Image.Image)
     assert input_image.size == (48, 32)
+
+
+def test_seconds_defaults_fps_and_frames(test_client):
+    fps_values = []
+
+    def _fake_encode(video, fps):
+        fps_values.append(fps)
+        return "Zg=="
+
+    with patch(
+        "vllm_omni.entrypoints.openai.serving_video.encode_video_base64",
+        side_effect=_fake_encode,
+    ):
+        response = test_client.post(
+            "/v1/videos",
+            data={
+                "prompt": "A bird flying.",
+                "seconds": "3",
+            },
+        )
+
+    assert response.status_code == 200
+    engine = test_client.app.state.openai_serving_video._engine_client
+    captured = engine.captured_sampling_params_list[0]
+    assert captured.num_frames == 72
+    assert captured.fps == 24
+    assert fps_values == [24]
+
+
+def test_extra_body_size_overrides_params(test_client):
+    with patch(
+        "vllm_omni.entrypoints.openai.serving_video.encode_video_base64",
+        return_value="Zg==",
+    ):
+        response = test_client.post(
+            "/v1/videos",
+            data={
+                "prompt": "extra body size",
+                "extra_body": '{"size": "320x240"}',
+            },
+        )
+
+    assert response.status_code == 200
+    engine = test_client.app.state.openai_serving_video._engine_client
+    captured = engine.captured_sampling_params_list[0]
+    assert captured.width == 320
+    assert captured.height == 240
+
+
+def test_sampling_params_pass_through(test_client):
+    with patch(
+        "vllm_omni.entrypoints.openai.serving_video.encode_video_base64",
+        return_value="Zg==",
+    ):
+        response = test_client.post(
+            "/v1/videos",
+            data={
+                "prompt": "param pass",
+                "num_inference_steps": "30",
+                "guidance_scale": "6.5",
+                "guidance_scale_2": "8.0",
+                "true_cfg_scale": "4.0",
+                "boundary_ratio": "0.7",
+                "flow_shift": "0.25",
+            },
+        )
+
+    assert response.status_code == 200
+    engine = test_client.app.state.openai_serving_video._engine_client
+    captured = engine.captured_sampling_params_list[0]
+    assert captured.num_inference_steps == 30
+    assert captured.guidance_scale == 6.5
+    assert captured.guidance_scale_2 == 8.0
+    assert captured.true_cfg_scale == 4.0
+    assert captured.boundary_ratio == 0.7
+    assert captured.extra_args["flow_shift"] == 0.25
+
+
+def test_missing_handler_returns_503():
+    app = FastAPI()
+    app.include_router(router)
+    app.state.openai_serving_video = None
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/videos",
+        data={"prompt": "no handler"},
+    )
+    assert response.status_code == 503
+    assert "not initialized" in response.json()["detail"].lower()
+
+
+def test_missing_prompt_returns_422(test_client):
+    response = test_client.post(
+        "/v1/videos",
+        data={"size": "320x240"},
+    )
+    assert response.status_code == 422
+
+
+def test_invalid_size_format_raises_validation_error(test_client):
+    with pytest.raises(ValidationError):
+        test_client.post(
+            "/v1/videos",
+            data={"prompt": "bad size", "size": "invalid"},
+        )
+
+
+def test_invalid_size_parse_returns_500(test_client):
+    response = test_client.post(
+        "/v1/videos",
+        data={"prompt": "bad size", "size": "640x"},
+    )
+    assert response.status_code == 500
+    assert "video generation failed" in response.json()["detail"].lower()
+
+
+def test_invalid_response_format_raises_validation_error(test_client):
+    with pytest.raises(ValidationError):
+        test_client.post(
+            "/v1/videos",
+            data={"prompt": "bad format", "response_format": "url"},
+        )
+
+
+def test_invalid_seconds_returns_422(test_client):
+    response = test_client.post(
+        "/v1/videos",
+        data={"prompt": "bad seconds", "seconds": "abc"},
+    )
+    assert response.status_code == 422
+
+
+def test_invalid_n_raises_validation_error(test_client):
+    with pytest.raises(ValidationError):
+        test_client.post(
+            "/v1/videos",
+            data={"prompt": "bad n", "n": "0"},
+        )
+
+    with pytest.raises(ValidationError):
+        test_client.post(
+            "/v1/videos",
+            data={"prompt": "bad n", "n": "5"},
+        )
+
+
+def test_negative_prompt_and_seed_pass_through(test_client):
+    with patch(
+        "vllm_omni.entrypoints.openai.serving_video.encode_video_base64",
+        return_value="Zg==",
+    ):
+        response = test_client.post(
+            "/v1/videos",
+            data={
+                "prompt": "snowy mountain",
+                "negative_prompt": "blurry",
+                "seed": "123",
+            },
+        )
+
+    assert response.status_code == 200
+    engine = test_client.app.state.openai_serving_video._engine_client
+    captured_prompt = engine.captured_prompt
+    captured_params = engine.captured_sampling_params_list[0]
+    assert captured_prompt["negative_prompt"] == "blurry"
+    assert captured_params.seed == 123
+
+
+def test_extra_body_custom_params_pass_through(test_client):
+    with patch(
+        "vllm_omni.entrypoints.openai.serving_video.encode_video_base64",
+        return_value="Zg==",
+    ):
+        response = test_client.post(
+            "/v1/videos",
+            data={
+                "prompt": "extra body",
+                "extra_body": '{"custom_key": "custom_value"}',
+            },
+        )
+
+    assert response.status_code == 200
+    engine = test_client.app.state.openai_serving_video._engine_client
+    captured_params = engine.captured_sampling_params_list[0]
+    assert captured_params.extra_args["custom_key"] == "custom_value"
+
+
+def test_invalid_lora_returns_400(test_client):
+    response = test_client.post(
+        "/v1/videos",
+        data={
+            "prompt": "lora test",
+            "lora": '{"name": "bad-lora"}',
+        },
+    )
+    assert response.status_code == 400
+    assert "lora" in response.json()["detail"].lower()
+
+
+def test_invalid_extra_body_json_returns_400(test_client):
+    response = test_client.post(
+        "/v1/videos",
+        data={
+            "prompt": "bad extra body",
+            "extra_body": "{not json",
+        },
+    )
+    assert response.status_code == 400
+    assert "json" in response.json()["detail"].lower()
+
+
+def test_video_request_validation():
+    req = VideoGenerationRequest(prompt="test")
+    assert req.prompt == "test"
+    assert req.n == 1
+    assert req.response_format == VideoResponseFormat.B64_JSON
+
+    with pytest.raises(ValueError):
+        VideoGenerationRequest(prompt="test", response_format="url")
+
+    with pytest.raises(ValueError):
+        VideoGenerationRequest(prompt="test", size="invalid")
+
+    with pytest.raises(ValueError):
+        VideoGenerationRequest(prompt="test", seconds="abc")
+
+    with pytest.raises(ValueError):
+        VideoGenerationRequest(prompt="test", n=0)
