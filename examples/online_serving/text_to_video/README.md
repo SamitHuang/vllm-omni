@@ -52,7 +52,7 @@ curl -s http://localhost:8091/v1/videos \
 
 ## Request Format
 
-### Simple Text Generation
+### Simple Text-to-Video Generation
 
 ```bash
 curl -X POST http://localhost:8091/v1/videos \

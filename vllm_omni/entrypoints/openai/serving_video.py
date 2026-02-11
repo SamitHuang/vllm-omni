@@ -101,9 +101,9 @@ class OmniOpenAIServingVideo:
         gen_params = OmniDiffusionSamplingParams(num_outputs_per_prompt=request.n)
 
         width, height, num_frames, fps = self._resolve_video_params(request, extra_body)
-    if width is not None and height is not None:
-        gen_params.width = width
-        gen_params.height = height
+        if width is not None and height is not None:
+            gen_params.width = width
+            gen_params.height = height
         if num_frames is not None:
             gen_params.num_frames = num_frames
         if fps is not None:
