@@ -3,7 +3,7 @@
 
 OUTPUT_PATH="wan22_output.mp4"
 
-curl -X POST http://localhost:8091/v1/videos \
+curl -X POST http://localhost:8098/v1/videos \
   -H "Accept: application/json" \
   -F "prompt=Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage." \
   -F "seconds=2" \
