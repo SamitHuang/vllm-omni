@@ -36,12 +36,10 @@ class OmniOpenAIServingVideo:
         engine_client: EngineClient,
         model_name: str | None = None,
         stage_configs: list[Any] | None = None,
-        diffusion_only: bool = False,
     ) -> None:
         self._engine_client = engine_client
         self._model_name = model_name
         self._stage_configs = stage_configs
-        self._diffusion_only = diffusion_only
 
     @classmethod
     def for_diffusion(
@@ -54,7 +52,6 @@ class OmniOpenAIServingVideo:
             diffusion_engine,
             model_name=model_name,
             stage_configs=stage_configs,
-            diffusion_only=True,
         )
 
     async def generate_videos(
@@ -219,8 +216,7 @@ class OmniOpenAIServingVideo:
     ) -> Any:
         has_stage_list = hasattr(self._engine_client, "stage_list")
         logger.info(
-            "Video generation routing: diffusion_only=%s, stage_configs=%s, has_stage_list=%s, engine_type=%s",
-            self._diffusion_only,
+            "Video generation routing: stage_configs=%s, has_stage_list=%s, engine_type=%s",
             "present"
             if (self._stage_configs or (getattr(raw_request.app.state, "stage_configs", None) if raw_request else None))
             else "missing",
