@@ -81,8 +81,6 @@ class OmniOpenAIServingVideo:
                 model_name,
             )
 
-        extra_body = request.extra_body or {}
-
         prompt: OmniTextPrompt = {"prompt": request.prompt}
         if request.negative_prompt is not None:
             prompt["negative_prompt"] = request.negative_prompt
@@ -100,7 +98,7 @@ class OmniOpenAIServingVideo:
 
         gen_params = OmniDiffusionSamplingParams(num_outputs_per_prompt=request.n)
 
-        width, height, num_frames, fps = self._resolve_video_params(request, extra_body)
+        width, height, num_frames, fps = self._resolve_video_params(request)
         if width is not None and height is not None:
             gen_params.width = width
             gen_params.height = height
@@ -119,23 +117,18 @@ class OmniOpenAIServingVideo:
             gen_params.true_cfg_scale = request.true_cfg_scale
         if request.seed is not None:
             gen_params.seed = request.seed
-        boundary_ratio = request.boundary_ratio
-        if boundary_ratio is None:
-            boundary_ratio = extra_body.get("boundary_ratio")
-        if boundary_ratio is not None:
-            gen_params.boundary_ratio = boundary_ratio
+        if request.boundary_ratio is not None:
+            gen_params.boundary_ratio = request.boundary_ratio
 
         logger.info(
-            "Boundary ratio parse: request=%s extra_body=%s gen_params=%s",
+            "Boundary ratio parse: request=%s gen_params=%s",
             request.boundary_ratio,
-            extra_body.get("boundary_ratio"),
             gen_params.boundary_ratio,
         )
         if request.flow_shift is not None:
             gen_params.extra_args["flow_shift"] = request.flow_shift
 
-        self._apply_extra_body(extra_body, gen_params)
-        self._apply_lora(request.lora or extra_body.get("lora"), gen_params)
+        self._apply_lora(request.lora, gen_params)
 
         logger.info(
             "Video sampling params: steps=%s guidance=%s guidance_2=%s seed=%s",
@@ -165,29 +158,15 @@ class OmniOpenAIServingVideo:
         return None
 
     @staticmethod
-    def _resolve_video_params(
-        request: VideoGenerationRequest, extra_body: dict[str, Any]
-    ) -> tuple[int | None, int | None, int | None, int | None]:
+    def _resolve_video_params(request: VideoGenerationRequest) -> tuple[int | None, int | None, int | None, int | None]:
         width = request.width or (request.video_params.width if request.video_params else None)
         height = request.height or (request.video_params.height if request.video_params else None)
         num_frames = request.num_frames or (request.video_params.num_frames if request.video_params else None)
         fps = request.fps or (request.video_params.fps if request.video_params else None)
         seconds = request.seconds
 
-        size = request.size or extra_body.get("size")
-        if size:
-            width, height = parse_size(size)
-
-        if width is None:
-            width = extra_body.get("width")
-        if height is None:
-            height = extra_body.get("height")
-        if num_frames is None:
-            num_frames = extra_body.get("num_frames")
-        if fps is None:
-            fps = extra_body.get("fps")
-        if seconds is None:
-            seconds = extra_body.get("seconds")
+        if request.size:
+            width, height = parse_size(request.size)
 
         if num_frames is None and seconds is not None:
             if fps is None:
@@ -231,34 +210,6 @@ class OmniOpenAIServingVideo:
         gen_params.lora_request = LoRARequest(str(lora_name), int(lora_int_id), str(lora_path))
         if lora_scale is not None:
             gen_params.lora_scale = float(lora_scale)
-
-    @staticmethod
-    def _apply_extra_body(extra_body: dict[str, Any], gen_params: OmniDiffusionSamplingParams) -> None:
-        reserved = {
-            "model",
-            "prompt",
-            "n",
-            "seconds",
-            "size",
-            "width",
-            "height",
-            "num_frames",
-            "fps",
-            "num_inference_steps",
-            "guidance_scale",
-            "guidance_scale_2",
-            "boundary_ratio",
-            "flow_shift",
-            "negative_prompt",
-            "seed",
-            "true_cfg_scale",
-            "response_format",
-            "lora",
-            "video_params",
-        }
-        for key, value in extra_body.items():
-            if key not in reserved:
-                gen_params.extra_args[key] = value
 
     async def _run_generation(
         self,

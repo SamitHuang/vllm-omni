@@ -146,7 +146,7 @@ def test_seconds_defaults_fps_and_frames(test_client):
     assert fps_values == [24]
 
 
-def test_extra_body_size_overrides_params(test_client):
+def test_size_param_sets_width_height(test_client):
     with patch(
         "vllm_omni.entrypoints.openai.serving_video.encode_video_base64",
         return_value="Zg==",
@@ -154,8 +154,8 @@ def test_extra_body_size_overrides_params(test_client):
         response = test_client.post(
             "/v1/videos",
             data={
-                "prompt": "extra body size",
-                "extra_body": '{"size": "320x240"}',
+                "prompt": "size test",
+                "size": "320x240",
             },
         )
 
@@ -286,25 +286,6 @@ def test_negative_prompt_and_seed_pass_through(test_client):
     assert captured_params.seed == 123
 
 
-def test_extra_body_custom_params_pass_through(test_client):
-    with patch(
-        "vllm_omni.entrypoints.openai.serving_video.encode_video_base64",
-        return_value="Zg==",
-    ):
-        response = test_client.post(
-            "/v1/videos",
-            data={
-                "prompt": "extra body",
-                "extra_body": '{"custom_key": "custom_value"}',
-            },
-        )
-
-    assert response.status_code == 200
-    engine = test_client.app.state.openai_serving_video._engine_client
-    captured_params = engine.captured_sampling_params_list[0]
-    assert captured_params.extra_args["custom_key"] == "custom_value"
-
-
 def test_invalid_lora_returns_400(test_client):
     response = test_client.post(
         "/v1/videos",
@@ -315,18 +296,6 @@ def test_invalid_lora_returns_400(test_client):
     )
     assert response.status_code == 400
     assert "lora" in response.json()["detail"].lower()
-
-
-def test_invalid_extra_body_json_returns_400(test_client):
-    response = test_client.post(
-        "/v1/videos",
-        data={
-            "prompt": "bad extra body",
-            "extra_body": "{not json",
-        },
-    )
-    assert response.status_code == 400
-    assert "json" in response.json()["detail"].lower()
 
 
 def test_video_request_validation():

@@ -1544,7 +1544,6 @@ async def create_video(
     seed: int | None = Form(default=None),
     negative_prompt: str | None = Form(default=None),
     lora: str | None = Form(default=None),
-    extra_body: str | None = Form(default=None),
 ) -> VideoGenerationResponse:
     """OpenAI-style video create endpoint (multipart form-data)."""
     input_reference_bytes = await input_reference.read() if input_reference is not None else None
@@ -1571,7 +1570,6 @@ async def create_video(
         "seed": seed,
         "negative_prompt": negative_prompt,
         "lora": _parse_form_json(lora),
-        "extra_body": _parse_form_json(extra_body),
     }
     request_data = {k: v for k, v in request_data.items() if v is not None}
     request = VideoGenerationRequest(**request_data)

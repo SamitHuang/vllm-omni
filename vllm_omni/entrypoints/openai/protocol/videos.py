@@ -123,9 +123,6 @@ class VideoGenerationRequest(BaseModel):
         ),
     )
 
-    # Free-form extensions for future models
-    extra_body: dict[str, Any] | None = Field(default=None, description="Additional model-specific parameters")
-
     @field_validator("size")
     @classmethod
     def validate_size(cls, v):
