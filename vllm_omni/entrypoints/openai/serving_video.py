@@ -10,7 +10,6 @@ from typing import Any, cast
 
 from fastapi import HTTPException, Request
 from PIL import Image
-from vllm import SamplingParams
 from vllm.engine.protocol import EngineClient
 from vllm.logger import init_logger
 
@@ -168,10 +167,10 @@ class OmniOpenAIServingVideo:
         if request.size:
             width, height = parse_size(request.size)
 
+        if fps is None:
+            fps = 24  # Default FPS if not specified
+
         if num_frames is None and seconds is not None:
-            if fps is None:
-                # Match OpenAI semantics: seconds implies a full clip length.
-                fps = 24
             num_frames = int(seconds) * int(fps)
 
         return width, height, num_frames, fps
@@ -233,104 +232,49 @@ class OmniOpenAIServingVideo:
             or (getattr(raw_request.app.state, "stage_configs", None) if raw_request else None)
             or getattr(self._engine_client, "stage_configs", None)
         )
+
         if not stage_configs:
-            if hasattr(self._engine_client, "stage_list"):
-                engine_client = cast(AsyncOmni, self._engine_client)
-                stage_list = getattr(engine_client, "stage_list", None)
-                result = None
-                if isinstance(stage_list, list) and stage_list:
-                    sampling_params_list = [gen_params for _ in stage_list]
-                    async for output in engine_client.generate(
-                        prompt=prompt,
-                        request_id=request_id,
-                        sampling_params_list=sampling_params_list,
-                    ):
-                        result = output
+            if not hasattr(self._engine_client, "stage_list"):
+                raise HTTPException(
+                    status_code=HTTPStatus.SERVICE_UNAVAILABLE.value,
+                    detail="Stage configs not found. Start server with an omni diffusion model.",
+                )
+
+        # Video generation endpoint only supports diffusion stages.
+        if stage_configs:
+            for stage in stage_configs:
+                # Extract stage_type: dicts and OmegaConf objects use .get(), others use getattr
+                if hasattr(stage, "get"):
+                    stage_type = stage.get("stage_type", "llm")
                 else:
-                    result = await engine_client.generate(
-                        prompt=prompt,
-                        request_id=request_id,
-                        sampling_params_list=[gen_params],
-                    )
-                if result is None:
+                    stage_type = getattr(stage, "stage_type", "llm")
+
+                if stage_type != "diffusion":
                     raise HTTPException(
-                        status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
-                        detail="No output generated from diffusion-only pipeline.",
+                        status_code=HTTPStatus.SERVICE_UNAVAILABLE.value,
+                        detail=f"Video generation only supports diffusion stages, found '{stage_type}' stage.",
                     )
-                return result
-            raise HTTPException(
-                status_code=HTTPStatus.SERVICE_UNAVAILABLE.value,
-                detail="Stage configs not found. Start server with an omni diffusion model.",
-            )
 
-        stage_types: list[str] = []
-        has_diffusion_stage = False
-        for stage in stage_configs:
-            stage_type = "llm"
-            if isinstance(stage, dict):
-                stage_type = stage.get("stage_type", "llm")
-            elif hasattr(stage, "get"):
-                stage_type = stage.get("stage_type", "llm")
-            elif hasattr(stage, "stage_type"):
-                stage_type = stage.stage_type
-            else:
-                try:
-                    stage_type = stage["stage_type"] if "stage_type" in stage else "llm"
-                except (TypeError, KeyError):
-                    stage_type = "llm"
-            if stage_type == "diffusion":
-                has_diffusion_stage = True
-            stage_types.append(stage_type)
-
-        if not has_diffusion_stage:
-            raise HTTPException(
-                status_code=HTTPStatus.SERVICE_UNAVAILABLE.value,
-                detail="No diffusion stage found in multi-stage pipeline.",
-            )
-
+        # Common generation logic for both paths
         engine_client = cast(AsyncOmni, self._engine_client)
         stage_list = getattr(engine_client, "stage_list", None)
-        result = None
         if isinstance(stage_list, list):
-            default_params_list: list[OmniSamplingParams] | None = getattr(
-                engine_client, "default_sampling_params_list", None
-            )
-            if not isinstance(default_params_list, list):
-                default_params_list = [
-                    OmniDiffusionSamplingParams() if st == "diffusion" else SamplingParams() for st in stage_types
-                ]
-            else:
-                default_params_list = list(default_params_list)
-            if len(default_params_list) != len(stage_types):
-                default_params_list = (
-                    default_params_list
-                    + [OmniDiffusionSamplingParams() if st == "diffusion" else SamplingParams() for st in stage_types]
-                )[: len(stage_types)]
-
-            sampling_params_list: list[OmniSamplingParams] = []
-            for idx, stage_type in enumerate(stage_types):
-                if stage_type == "diffusion":
-                    sampling_params_list.append(gen_params)
-                else:
-                    sampling_params_list.append(default_params_list[idx])
-
-            async for output in engine_client.generate(
-                prompt=prompt,
-                request_id=request_id,
-                sampling_params_list=sampling_params_list,
-            ):
-                result = output
+            sampling_params_list: list[OmniSamplingParams] = [gen_params for _ in stage_list]
         else:
-            result = await engine_client.generate(
-                prompt=prompt,
-                request_id=request_id,
-                sampling_params_list=[gen_params],
-            )
+            sampling_params_list = [gen_params]
+
+        result = None
+        async for output in engine_client.generate(
+            prompt=prompt,
+            request_id=request_id,
+            sampling_params_list=sampling_params_list,
+        ):
+            result = output
 
         if result is None:
             raise HTTPException(
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
-                detail="No output generated from multi-stage pipeline.",
+                detail="No output generated from video generation pipeline.",
             )
         return result
 
