@@ -89,7 +89,7 @@ class DiffusionModelRunner:
         # Load model within forward context
         with set_forward_context(vllm_config=self.vllm_config, omni_diffusion_config=self.od_config):
             load_config = LoadConfig()
-            model_loader = DiffusersPipelineLoader(load_config)
+            model_loader = DiffusersPipelineLoader(load_config, od_config=self.od_config)
             time_before_load = time.perf_counter()
 
             with get_memory_context():

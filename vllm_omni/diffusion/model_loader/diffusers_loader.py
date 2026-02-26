@@ -49,18 +49,24 @@ def _multi_thread_safetensors_weights_iterator(
     use_tqdm_on_load: bool,
     max_workers: int = 8,
 ) -> Generator[tuple[str, torch.Tensor], None, None]:
-    """Load safetensors shards in parallel using a thread pool."""
+    """Load safetensors shards in parallel using a thread pool.
+
+    Note: Peak CPU RAM can approach the sum of all shard files since completed
+    futures may pile up before the consumer processes them. On memory-constrained
+    machines, use --num-weight-load-threads 2 or --disable-multithread-weight-load.
+    """
     sorted_files = sorted(hf_weights_files, key=_natural_sort_key)
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(_load_safetensors_file, f) for f in sorted_files]
-        futures_iter = tqdm(
-            concurrent.futures.as_completed(futures),
-            total=len(sorted_files),
-            desc="Multi-thread loading safetensors shards",
-            disable=not use_tqdm_on_load,
-            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
-        )
-        for future in futures_iter:
+        completed = concurrent.futures.as_completed(futures)
+        if use_tqdm_on_load:
+            completed = tqdm(
+                completed,
+                total=len(sorted_files),
+                desc="Multi-thread loading safetensors shards",
+                bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
+            )
+        for future in completed:
             yield from future.result().items()
 
 
@@ -96,8 +102,9 @@ class DiffusersPipelineLoader:
     counter_before_loading_weights: float = 0.0
     counter_after_loading_weights: float = 0.0
 
-    def __init__(self, load_config: LoadConfig):
+    def __init__(self, load_config: LoadConfig, od_config: OmniDiffusionConfig | None = None):
         self.load_config = load_config
+        self.od_config = od_config
 
     def _prepare_weights(
         self,
@@ -189,13 +196,9 @@ class DiffusersPipelineLoader:
 
         return hf_folder, hf_weights_files, use_safetensors
 
-    def _get_weights_iterator(
-        self,
-        source: "ComponentSource",
-        od_config: OmniDiffusionConfig | None = None,
-    ) -> Generator[tuple[str, torch.Tensor], None, None]:
+    def _get_weights_iterator(self, source: "ComponentSource") -> Generator[tuple[str, torch.Tensor], None, None]:
         """Get an iterator for the model weights based on the load format."""
-        hf_folder, hf_weights_files, use_safetensors = self._prepare_weights(
+        _, hf_weights_files, use_safetensors = self._prepare_weights(
             source.model_or_path,
             source.subfolder,
             source.revision,
@@ -203,6 +206,7 @@ class DiffusersPipelineLoader:
             source.allow_patterns_overrides,
         )
 
+        od_config = self.od_config
         use_multithread = (
             use_safetensors
             and od_config is not None
@@ -232,13 +236,12 @@ class DiffusersPipelineLoader:
         self,
         model: nn.Module,
     ) -> Generator[tuple[str, torch.Tensor], None, None]:
-        od_config = getattr(model, "od_config", None)
         sources = cast(
             Iterable[DiffusersPipelineLoader.ComponentSource],
             getattr(model, "weights_sources", ()),
         )
         for source in sources:
-            yield from self._get_weights_iterator(source, od_config=od_config)
+            yield from self._get_weights_iterator(source)
 
     def download_model(self, model_config: ModelConfig) -> None:
         self._prepare_weights(
