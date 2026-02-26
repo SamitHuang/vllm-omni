@@ -36,10 +36,12 @@ logger = init_logger(__name__)
 def _natural_sort_key(filepath: str) -> list:
     """Natural sort key for filenames with numeric components, e.g.
     model-00001-of-00005.safetensors -> ['model-', 1, '-of-', 5, '.safetensors']."""
-    return [
-        int(s) if s.isdigit() else s
-        for s in re.split(r"(\d+)", os.path.basename(filepath))
-    ]
+    return [int(s) if s.isdigit() else s for s in re.split(r"(\d+)", os.path.basename(filepath))]
+
+
+def _load_safetensors_file(file_path: str) -> dict[str, torch.Tensor]:
+    """Load a single safetensors file into CPU memory."""
+    return load_file(file_path, device="cpu")
 
 
 def _multi_thread_safetensors_weights_iterator(
@@ -47,18 +49,10 @@ def _multi_thread_safetensors_weights_iterator(
     use_tqdm_on_load: bool,
     max_workers: int = 8,
 ) -> Generator[tuple[str, torch.Tensor], None, None]:
-    """Load safetensors shards in parallel using a thread pool.
-
-    This accelerates startup for diffusion models (e.g. Qwen-Image) by
-    loading multiple shard files concurrently from disk.
-    """
+    """Load safetensors shards in parallel using a thread pool."""
     sorted_files = sorted(hf_weights_files, key=_natural_sort_key)
-
-    def _load_file(st_file: str) -> dict[str, torch.Tensor]:
-        return load_file(st_file, device="cpu")
-
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(_load_file, st_file) for st_file in sorted_files]
+        futures = [executor.submit(_load_safetensors_file, f) for f in sorted_files]
         futures_iter = tqdm(
             concurrent.futures.as_completed(futures),
             total=len(sorted_files),
@@ -67,9 +61,7 @@ def _multi_thread_safetensors_weights_iterator(
             bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
         )
         for future in futures_iter:
-            state_dict = future.result()
-            for name, param in state_dict.items():
-                yield name, param
+            yield from future.result().items()
 
 
 MODEL_INDEX = "model_index.json"
@@ -218,7 +210,7 @@ class DiffusersPipelineLoader:
             and self.load_config.safetensors_load_strategy != "torchao"
         )
         if use_multithread:
-            num_threads = getattr(od_config, "num_weight_load_threads", 8)
+            num_threads = getattr(od_config, "num_weight_load_threads", 4)
             weights_iterator = _multi_thread_safetensors_weights_iterator(
                 hf_weights_files,
                 self.load_config.use_tqdm_on_load,

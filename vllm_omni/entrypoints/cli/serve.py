@@ -199,13 +199,13 @@ class OmniServeCommand(CLISubcommand):
             action="store_false",
             dest="enable_multithread_weight_load",
             default=True,
-            help="Disable multi-threaded safetensors loading (default: enabled with 8 threads).",
+            help="Disable multi-threaded safetensors loading (default: enabled with 4 threads).",
         )
         omni_config_group.add_argument(
             "--num-weight-load-threads",
             type=int,
-            default=8,
-            help="Number of threads for parallel weight loading (default: 8).",
+            default=4,
+            help="Number of threads for parallel weight loading (default: 4).",
         )
 
         # diffusion model offload parameters
