@@ -310,6 +310,10 @@ class OmniDiffusionConfig:
     # Compilation
     enforce_eager: bool = False
 
+    # Parallel weight loading (for faster diffusion model startup)
+    enable_multithread_weight_load: bool = True
+    num_weight_load_threads: int = 8
+
     # Enable sleep mode
     enable_sleep_mode: bool = False
 

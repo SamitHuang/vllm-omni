@@ -1,15 +1,19 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+import concurrent.futures
 import dataclasses
 import glob
 import os
+import re
 import time
 from collections.abc import Generator, Iterable
 from pathlib import Path
 from typing import cast
 
 import torch
+from safetensors.torch import load_file
 from torch import nn
+from tqdm.auto import tqdm
 from vllm.config import ModelConfig
 from vllm.config.load import LoadConfig
 from vllm.logger import init_logger
@@ -29,15 +33,51 @@ from vllm_omni.diffusion.registry import initialize_model
 logger = init_logger(__name__)
 
 
+def _natural_sort_key(filepath: str) -> list:
+    """Natural sort key for filenames with numeric components, e.g.
+    model-00001-of-00005.safetensors -> ['model-', 1, '-of-', 5, '.safetensors']."""
+    return [
+        int(s) if s.isdigit() else s
+        for s in re.split(r"(\d+)", os.path.basename(filepath))
+    ]
+
+
+def _multi_thread_safetensors_weights_iterator(
+    hf_weights_files: list[str],
+    use_tqdm_on_load: bool,
+    max_workers: int = 8,
+) -> Generator[tuple[str, torch.Tensor], None, None]:
+    """Load safetensors shards in parallel using a thread pool.
+
+    This accelerates startup for diffusion models (e.g. Qwen-Image) by
+    loading multiple shard files concurrently from disk.
+    """
+    sorted_files = sorted(hf_weights_files, key=_natural_sort_key)
+
+    def _load_file(st_file: str) -> dict[str, torch.Tensor]:
+        return load_file(st_file, device="cpu")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(_load_file, st_file) for st_file in sorted_files]
+        futures_iter = tqdm(
+            concurrent.futures.as_completed(futures),
+            total=len(sorted_files),
+            desc="Multi-thread loading safetensors shards",
+            disable=not use_tqdm_on_load,
+            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
+        )
+        for future in futures_iter:
+            state_dict = future.result()
+            for name, param in state_dict.items():
+                yield name, param
+
+
 MODEL_INDEX = "model_index.json"
 DIFFUSION_MODEL_WEIGHTS_INDEX = "diffusion_pytorch_model.safetensors.index.json"
 
 
 class DiffusersPipelineLoader:
     """Model loader that can load diffusers pipeline components from disk."""
-
-    # default number of thread when enable multithread weight loading
-    DEFAULT_NUM_THREADS = 8
 
     @dataclasses.dataclass
     class ComponentSource:
@@ -66,16 +106,6 @@ class DiffusersPipelineLoader:
 
     def __init__(self, load_config: LoadConfig):
         self.load_config = load_config
-
-        # TODO(Isotr0py): Enable multithreaded weight loading
-        # extra_config = load_config.model_loader_extra_config
-        # allowed_keys = {"enable_multithread_load", "num_threads"}
-        # unexpected_keys = set(extra_config.keys()) - allowed_keys
-
-        # if unexpected_keys:
-        #     raise ValueError(
-        #         f"Unexpected extra config keys for load format {load_config.load_format}: {unexpected_keys}"
-        #     )
 
     def _prepare_weights(
         self,
@@ -167,7 +197,11 @@ class DiffusersPipelineLoader:
 
         return hf_folder, hf_weights_files, use_safetensors
 
-    def _get_weights_iterator(self, source: "ComponentSource") -> Generator[tuple[str, torch.Tensor], None, None]:
+    def _get_weights_iterator(
+        self,
+        source: "ComponentSource",
+        od_config: OmniDiffusionConfig | None = None,
+    ) -> Generator[tuple[str, torch.Tensor], None, None]:
         """Get an iterator for the model weights based on the load format."""
         hf_folder, hf_weights_files, use_safetensors = self._prepare_weights(
             source.model_or_path,
@@ -176,11 +210,26 @@ class DiffusersPipelineLoader:
             source.fall_back_to_pt,
             source.allow_patterns_overrides,
         )
-        weights_iterator = safetensors_weights_iterator(
-            hf_weights_files,
-            self.load_config.use_tqdm_on_load,
-            self.load_config.safetensors_load_strategy,
+
+        use_multithread = (
+            use_safetensors
+            and od_config is not None
+            and getattr(od_config, "enable_multithread_weight_load", False)
+            and self.load_config.safetensors_load_strategy != "torchao"
         )
+        if use_multithread:
+            num_threads = getattr(od_config, "num_weight_load_threads", 8)
+            weights_iterator = _multi_thread_safetensors_weights_iterator(
+                hf_weights_files,
+                self.load_config.use_tqdm_on_load,
+                max_workers=num_threads,
+            )
+        else:
+            weights_iterator = safetensors_weights_iterator(
+                hf_weights_files,
+                self.load_config.use_tqdm_on_load,
+                self.load_config.safetensors_load_strategy,
+            )
 
         if self.counter_before_loading_weights == 0.0:
             self.counter_before_loading_weights = time.perf_counter()
@@ -191,12 +240,13 @@ class DiffusersPipelineLoader:
         self,
         model: nn.Module,
     ) -> Generator[tuple[str, torch.Tensor], None, None]:
+        od_config = getattr(model, "od_config", None)
         sources = cast(
             Iterable[DiffusersPipelineLoader.ComponentSource],
             getattr(model, "weights_sources", ()),
         )
         for source in sources:
-            yield from self._get_weights_iterator(source)
+            yield from self._get_weights_iterator(source, od_config=od_config)
 
     def download_model(self, model_config: ModelConfig) -> None:
         self._prepare_weights(
