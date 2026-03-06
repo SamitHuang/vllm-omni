@@ -38,7 +38,9 @@ from vllm_omni.outputs import OmniRequestOutput
 logger = init_logger(__name__)
 
 
-def _weak_close_cleanup_async(stage_list, stage_in_queues, stage_out_queues, ray_pg, output_handler, zmq_ctx=None, inline_engine=None):
+def _weak_close_cleanup_async(
+    stage_list, stage_in_queues, stage_out_queues, ray_pg, output_handler, zmq_ctx=None, inline_engine=None
+):
     """Weak reference cleanup function for AsyncOmni instances."""
     if inline_engine is not None:
         try:
@@ -304,9 +306,7 @@ class AsyncOmni(OmniBase):
             await self._pause_cond.wait_for(lambda: not self._paused)
 
         if self._inline_diffusion:
-            async for output in self._generate_inline(
-                prompt, request_id, sampling_params_list, output_modalities
-            ):
+            async for output in self._generate_inline(prompt, request_id, sampling_params_list, output_modalities):
                 yield output
             return
 
@@ -433,7 +433,8 @@ class AsyncOmni(OmniBase):
 
         logger.info(
             "[%s] Inline diffusion generate for request %s",
-            self._name, request_id,
+            self._name,
+            request_id,
         )
 
         try:
@@ -463,24 +464,31 @@ class AsyncOmni(OmniBase):
 
             try:
                 metrics.on_finalize_request(
-                    final_stage_id_for_e2e, request_id, _wall_start_ts,
+                    final_stage_id_for_e2e,
+                    request_id,
+                    _wall_start_ts,
                 )
                 metrics.build_and_log_summary()
             except Exception as e:
                 logger.exception(
                     "[%s] Failed to finalize inline metrics: %s",
-                    self._name, e,
+                    self._name,
+                    e,
                 )
 
         except (asyncio.CancelledError, GeneratorExit):
             logger.info(
-                "[%s] Inline request %s cancelled.", self._name, request_id,
+                "[%s] Inline request %s cancelled.",
+                self._name,
+                request_id,
             )
             raise
         except Exception as e:
             logger.exception(
                 "[%s] Inline diffusion failed for request %s: %s",
-                self._name, request_id, e,
+                self._name,
+                request_id,
+                e,
             )
             raise
 

@@ -358,11 +358,7 @@ class OmniBase:
         # Phase 1 optimization: for a single diffusion stage in async mode,
         # run the engine directly in the orchestrator process to eliminate
         # the stage worker subprocess and its IPC serialization overhead.
-        if (
-            len(self.stage_list) == 1
-            and self.stage_list[0].stage_type == "diffusion"
-            and self.is_async
-        ):
+        if len(self.stage_list) == 1 and self.stage_list[0].stage_type == "diffusion" and self.is_async:
             self._init_inline_diffusion_engine(model, self.stage_configs[0], kwargs)
             return
 
@@ -418,9 +414,7 @@ class OmniBase:
         engine_args.pop("model_stage", None)
         engine_args.pop("model", None)
 
-        cfg_kv_collect_func = load_func_from_config(
-            getattr(stage_config, "cfg_kv_collect_func", None)
-        )
+        cfg_kv_collect_func = load_func_from_config(getattr(stage_config, "cfg_kv_collect_func", None))
 
         self._inline_engine = OmniDiffusion(
             model=model,

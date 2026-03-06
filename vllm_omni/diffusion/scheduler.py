@@ -8,7 +8,7 @@ import zmq
 from vllm.distributed.device_communicators.shm_broadcast import MessageQueue
 from vllm.logger import init_logger
 
-from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig
+from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig, unpack_diffusion_output_shm
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 
 logger = init_logger(__name__)
@@ -71,10 +71,18 @@ class Scheduler:
                 _t_dequeue = _time.perf_counter()
                 output = self.result_mq.dequeue()
                 _t_dequeue_ms = (_time.perf_counter() - _t_dequeue) * 1000
+
+                _t_unpack = _time.perf_counter()
+                try:
+                    unpack_diffusion_output_shm(output)
+                except Exception as e:
+                    logger.warning("SHM unpack failed (data may already be inline): %s", e)
+                _t_unpack_ms = (_time.perf_counter() - _t_unpack) * 1000
+
                 logger.info(
-                    "Hop1 scheduler←worker: result_mq.dequeue took %.2f ms "
-                    "(includes waiting for generation + enqueue serialization)",
+                    "Hop1 scheduler←worker: mq.dequeue=%.2f ms, shm_unpack=%.2f ms (dequeue includes generation wait)",
                     _t_dequeue_ms,
+                    _t_unpack_ms,
                 )
 
                 # {"status": "error", "error": str(e)}
