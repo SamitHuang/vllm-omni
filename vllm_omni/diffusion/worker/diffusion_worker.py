@@ -373,7 +373,14 @@ class WorkerProc:
     def return_result(self, output: DiffusionOutput):
         """Reply to client, only on rank 0."""
         if self.result_mq is not None:
+            import time as _time
+            _t0 = _time.perf_counter()
             self.result_mq.enqueue(output)
+            _t_ms = (_time.perf_counter() - _t0) * 1000
+            logger.info(
+                "Hop1 worker→scheduler: result_mq.enqueue took %.2f ms (rank %s)",
+                _t_ms, self.gpu_id,
+            )
 
     def recv_message(self):
         """Receive messages from broadcast queue."""

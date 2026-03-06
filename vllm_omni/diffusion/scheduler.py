@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import threading
+import time as _time
 
 import zmq
 from vllm.distributed.device_communicators.shm_broadcast import MessageQueue
@@ -58,13 +59,24 @@ class Scheduler:
                 }
 
                 # Broadcast RPC request to all workers
+                _t_broadcast = _time.perf_counter()
                 self.mq.enqueue(rpc_request)
-                # Wait for result from Rank 0 (or whoever sends it)
+                _t_broadcast_ms = (_time.perf_counter() - _t_broadcast) * 1000
+                logger.info("Hop1 scheduler→workers: mq.enqueue (broadcast request) took %.2f ms", _t_broadcast_ms)
 
+                # Wait for result from Rank 0 (or whoever sends it)
                 if self.result_mq is None:
                     raise RuntimeError("Result queue not initialized")
 
+                _t_dequeue = _time.perf_counter()
                 output = self.result_mq.dequeue()
+                _t_dequeue_ms = (_time.perf_counter() - _t_dequeue) * 1000
+                logger.info(
+                    "Hop1 scheduler←worker: result_mq.dequeue took %.2f ms "
+                    "(includes waiting for generation + enqueue serialization)",
+                    _t_dequeue_ms,
+                )
+
                 # {"status": "error", "error": str(e)}
                 if isinstance(output, dict) and output.get("status") == "error":
                     raise RuntimeError("worker error")
