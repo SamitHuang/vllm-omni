@@ -67,14 +67,19 @@ class DiffusionEngine:
             raise e
 
     def step(self, request: OmniDiffusionRequest) -> list[OmniRequestOutput]:
+        _step_t0 = time.perf_counter()
+
         # Apply pre-processing if available
+        preprocess_time = 0.0
         if self.pre_process_func is not None:
-            preprocess_start_time = time.time()
+            preprocess_start_time = time.perf_counter()
             request = self.pre_process_func(request)
-            preprocess_time = time.time() - preprocess_start_time
+            preprocess_time = time.perf_counter() - preprocess_start_time
             logger.info(f"Pre-processing completed in {preprocess_time:.4f} seconds")
 
+        _generate_t0 = time.perf_counter()
         output = self.add_req_and_wait_for_response(request)
+        _generate_ms = (time.perf_counter() - _generate_t0) * 1000
         if output.error:
             raise Exception(f"{output.error}")
         logger.info("Generation completed successfully.")
@@ -92,14 +97,24 @@ class DiffusionEngine:
                 for i, prompt in enumerate(request.prompts)
             ]
 
-        postprocess_start_time = time.time()
+        postprocess_start_time = time.perf_counter()
         outputs = self.post_process_func(output.output) if self.post_process_func is not None else output.output
         audio_payload = None
         if isinstance(outputs, dict):
             audio_payload = outputs.get("audio")
             outputs = outputs.get("video", outputs)
-        postprocess_time = time.time() - postprocess_start_time
+        postprocess_time = time.perf_counter() - postprocess_start_time
         logger.info(f"Post-processing completed in {postprocess_time:.4f} seconds")
+
+        _step_total_ms = (time.perf_counter() - _step_t0) * 1000
+        logger.info(
+            "DiffusionEngine.step breakdown: preprocess=%.2f ms, "
+            "add_req_and_wait=%.2f ms, postprocess=%.2f ms, total=%.2f ms",
+            preprocess_time * 1000,
+            _generate_ms,
+            postprocess_time * 1000,
+            _step_total_ms,
+        )
 
         # Convert to OmniRequestOutput format
         # Ensure outputs is a list
