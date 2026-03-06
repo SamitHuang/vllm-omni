@@ -110,7 +110,10 @@ class DiffusionEngine:
         logger.info(
             "DiffusionEngine.step breakdown: preprocess=%.2f ms, "
             "add_req_and_wait=%.2f ms, postprocess=%.2f ms, total=%.2f ms",
-            preprocess_time * 1000, _generate_ms, postprocess_time * 1000, _step_total_ms,
+            preprocess_time * 1000,
+            _generate_ms,
+            postprocess_time * 1000,
+            _step_total_ms,
         )
 
         # Convert to OmniRequestOutput format

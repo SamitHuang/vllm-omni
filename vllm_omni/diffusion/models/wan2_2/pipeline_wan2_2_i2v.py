@@ -586,9 +586,14 @@ class Wan22I2VPipeline(nn.Module, SupportImageInput, CFGParallelMixin, ProgressB
                 "LatentPreparation=%.2f ms, Denoising=%.2f ms (%d steps), "
                 "Decoding=%.2f ms, StagesSum=%.2f ms, PipelineWall=%.2f ms, "
                 "Unaccounted=%.2f ms",
-                _t_text_enc_ms, _t_img_enc_ms,
-                _t_latent_prep_ms, _t_denoise_ms, len(timesteps),
-                _t_decode_ms, _t_stages_sum, _t_pipeline_wall_ms,
+                _t_text_enc_ms,
+                _t_img_enc_ms,
+                _t_latent_prep_ms,
+                _t_denoise_ms,
+                len(timesteps),
+                _t_decode_ms,
+                _t_stages_sum,
+                _t_pipeline_wall_ms,
                 _t_pipeline_wall_ms - _t_stages_sum,
             )
 

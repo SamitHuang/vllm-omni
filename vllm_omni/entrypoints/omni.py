@@ -40,6 +40,7 @@ from vllm_omni.entrypoints.omni_stage import OmniStage
 from vllm_omni.entrypoints.stage_utils import SHUTDOWN_TASK, OmniStageTaskType
 from vllm_omni.entrypoints.stage_utils import maybe_load_from_ipc as _load
 from vllm_omni.entrypoints.utils import (
+    filter_dataclass_kwargs,
     get_final_stage_id_for_e2e,
     inject_omni_kv_config,
     load_and_resolve_stage_configs,
@@ -304,6 +305,9 @@ class OmniBase:
 
     def _initialize_stages(self, model: str, kwargs: dict[str, Any]) -> None:
         """Initialize stage list management."""
+        self._inline_diffusion = False
+        self._inline_engine = None
+
         stage_init_timeout = kwargs.get("stage_init_timeout", 20)
         shm_threshold_bytes = kwargs.get("shm_threshold_bytes", 65536)
         init_timeout = kwargs.get("init_timeout", 300)
@@ -351,6 +355,17 @@ class OmniBase:
         self.output_modalities = [st.final_output_type for st in self.stage_list]
         logger.info(f"[{self._name}] Loaded {len(self.stage_list)} stages")
 
+        # Phase 1 optimization: for a single diffusion stage in async mode,
+        # run the engine directly in the orchestrator process to eliminate
+        # the stage worker subprocess and its IPC serialization overhead.
+        if (
+            len(self.stage_list) == 1
+            and self.stage_list[0].stage_type == "diffusion"
+            and self.is_async
+        ):
+            self._init_inline_diffusion_engine(model, self.stage_configs[0], kwargs)
+            return
+
         if self.worker_backend == "ray":
             self._queue_cls = get_ray_queue_class()
         else:
@@ -362,6 +377,71 @@ class OmniBase:
         self._start_stages(model)
         # Wait for all stages to report readiness before seeding
         self._wait_for_stages_ready(timeout=init_timeout)
+
+    def _init_inline_diffusion_engine(
+        self,
+        model: str,
+        stage_config: Any,
+        kwargs: dict[str, Any],
+    ) -> None:
+        """Initialize diffusion engine directly in the orchestrator process.
+
+        For single-stage diffusion pipelines, this eliminates the stage worker
+        subprocess and the associated Hop3 IPC serialization overhead.
+        GPU workers for tensor parallelism are still spawned by the
+        DiffusionExecutor as separate processes.
+        """
+        from vllm_omni.diffusion.data import OmniDiffusionConfig
+        from vllm_omni.entrypoints.omni_diffusion import OmniDiffusion
+        from vllm_omni.entrypoints.stage_utils import (
+            _to_dict,
+            load_func_from_config,
+            set_stage_devices,
+        )
+
+        stage_id = stage_config.stage_id
+        engine_args = _to_dict(stage_config.engine_args)
+        runtime_cfg = _to_dict(getattr(stage_config, "runtime", {}))
+
+        if os.environ.get("VLLM_WORKER_MULTIPROC_METHOD") != "spawn":
+            os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+
+        try:
+            from vllm_omni.platforms import current_omni_platform
+
+            device_type = current_omni_platform.device_type
+            set_stage_devices(stage_id, runtime_cfg.get("devices"), device_type=device_type)
+        except Exception as e:
+            logger.warning("Device setup for inline diffusion failed: %s", e)
+
+        engine_args = filter_dataclass_kwargs(OmniDiffusionConfig, engine_args)
+        engine_args.pop("model_stage", None)
+        engine_args.pop("model", None)
+
+        cfg_kv_collect_func = load_func_from_config(
+            getattr(stage_config, "cfg_kv_collect_func", None)
+        )
+
+        self._inline_engine = OmniDiffusion(
+            model=model,
+            stage_id=stage_id,
+            engine_input_source=getattr(stage_config, "engine_input_source", []),
+            cfg_kv_collect_func=cfg_kv_collect_func,
+            **engine_args,
+        )
+        self._inline_diffusion = True
+
+        # These attributes are normally set by AsyncOmni._wait_for_stages_ready
+        # but we skip that for inline mode. Set them to None since there is no
+        # LLM stage to provide them.
+        self.input_processor = None
+        self.io_processor = None
+        self.model_config = None
+
+        logger.info(
+            "[%s] Inline diffusion mode active – stage worker subprocess bypassed",
+            self._name,
+        )
 
     def _is_async_chunk_enable(self, stage_args: list) -> bool:
         """get async chunk flag"""
