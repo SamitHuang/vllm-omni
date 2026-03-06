@@ -106,14 +106,14 @@ class DiffusionEngine:
         postprocess_time = time.perf_counter() - postprocess_start_time
         logger.info(f"Post-processing completed in {postprocess_time:.4f} seconds")
 
-        _step_total_ms = (time.perf_counter() - _step_t0) * 1000
+        step_total_ms = (time.perf_counter() - diffusion_engine_start_time) * 1000
         logger.info(
             "DiffusionEngine.step breakdown: preprocess=%.2f ms, "
             "add_req_and_wait=%.2f ms, postprocess=%.2f ms, total=%.2f ms",
             preprocess_time * 1000,
-            _generate_ms,
+            exec_total_time * 1000,
             postprocess_time * 1000,
-            _step_total_ms,
+            step_total_ms,
         )
 
         # Convert to OmniRequestOutput format
