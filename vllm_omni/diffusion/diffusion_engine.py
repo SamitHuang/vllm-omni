@@ -70,6 +70,7 @@ class DiffusionEngine:
         diffusion_engine_start_time = time.perf_counter()
 
         # Apply pre-processing if available
+        preprocess_time = 0.0
         if self.pre_process_func is not None:
             preprocess_start_time = time.perf_counter()
             request = self.pre_process_func(request)
