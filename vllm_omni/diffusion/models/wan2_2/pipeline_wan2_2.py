@@ -660,7 +660,8 @@ class Wan22Pipeline(nn.Module, CFGParallelMixin, ProgressBarMixin):
         if self.expand_timesteps and latent_condition is not None:
             latents = (1 - first_frame_mask) * latent_condition + first_frame_mask * latents
 
-        _t_decode_start = time.perf_counter()
+        if DEBUG_PERF:
+            _t_decode_start = time.perf_counter()
         if output_type == "latent":
             output = latents
         else:

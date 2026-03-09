@@ -417,7 +417,8 @@ class Wan22I2VPipeline(nn.Module, SupportImageInput, CFGParallelMixin, ProgressB
 
         batch_size = prompt_embeds.shape[0]
 
-        _t_img_enc_start = time.perf_counter()
+        if DEBUG_PERF:
+            _t_img_enc_start = time.perf_counter()
         if self.has_image_encoder and self.transformer.config.image_dim is not None:
             if image_embeds is None:
                 if last_image is None:
