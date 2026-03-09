@@ -27,7 +27,6 @@ from vllm.v1.worker.workspace import init_workspace_manager
 from vllm_omni.diffusion.data import (
     DiffusionOutput,
     OmniDiffusionConfig,
-    pack_diffusion_output_shm,
 )
 from vllm_omni.diffusion.distributed.parallel_state import (
     destroy_distributed_env,
@@ -35,6 +34,7 @@ from vllm_omni.diffusion.distributed.parallel_state import (
     initialize_model_parallel,
 )
 from vllm_omni.diffusion.forward_context import set_forward_context
+from vllm_omni.diffusion.ipc import pack_diffusion_output_shm
 from vllm_omni.diffusion.lora.manager import DiffusionLoRAManager
 from vllm_omni.diffusion.profiler import CurrentProfiler
 from vllm_omni.diffusion.request import OmniDiffusionRequest
