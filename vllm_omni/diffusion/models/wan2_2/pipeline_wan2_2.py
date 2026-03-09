@@ -652,8 +652,9 @@ class Wan22Pipeline(nn.Module, CFGParallelMixin, ProgressBarMixin):
         if current_omni_platform.is_available():
             current_omni_platform.empty_cache()
         self._current_timestep = None
-        current_omni_platform.synchronize()
-        _t_denoise_ms = (time.perf_counter() - _t_denoise_start) * 1000
+        if DEBUG_PERF:
+            current_omni_platform.synchronize()
+            _t_denoise_ms = (time.perf_counter() - _t_denoise_start) * 1000
 
         # For I2V mode: blend final latents with condition
         if self.expand_timesteps and latent_condition is not None:
