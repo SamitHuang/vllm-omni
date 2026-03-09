@@ -35,7 +35,6 @@ from vllm_omni.inputs.data import OmniTextPrompt
 from vllm_omni.platforms import current_omni_platform
 
 logger = logging.getLogger(__name__)
-
 DEBUG_PERF = False
 
 

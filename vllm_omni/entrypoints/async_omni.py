@@ -807,6 +807,10 @@ class AsyncOmni(OmniBase):
         return EngineDeadError()
 
     async def abort(self, request_id: str | Iterable[str]) -> None:
+        if self._inline_diffusion:
+            if self._inline_engine is not None:
+                self._inline_engine.engine.abort(request_id)
+            return None
         abort_task = {"type": OmniStageTaskType.ABORT, "request_id": request_id}
         for stage in self.stage_list:
             stage.submit(abort_task)
