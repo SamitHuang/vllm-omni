@@ -68,8 +68,8 @@ class DiffusionEngine:
 
     def step(self, request: OmniDiffusionRequest) -> list[OmniRequestOutput]:
         diffusion_engine_start_time = time.perf_counter()
+
         # Apply pre-processing if available
-        preprocess_time = 0.0
         if self.pre_process_func is not None:
             preprocess_start_time = time.perf_counter()
             request = self.pre_process_func(request)
@@ -127,15 +127,12 @@ class DiffusionEngine:
             "diffusion_engine_total_time_ms": exec_total_time * 1000,
             "image_num": int(request.sampling_params.num_outputs_per_prompt),
             "resolution": int(request.sampling_params.resolution),
+            "postprocess_time_ms": postprocess_time * 1000,
         }
-
         if self.pre_process_func is not None:
             metrics["preprocessing_time_ms"] = preprocess_time * 1000
 
         # Handle single request or multiple requests
-        metrics["postprocess_time_ms"] = postprocess_time * 1000
-        metrics["num_inference_steps"] = int(request.sampling_params.num_inference_steps)
-
         if len(request.prompts) == 1:
             # Single request: return single OmniRequestOutput
             prompt = request.prompts[0]
@@ -165,6 +162,7 @@ class DiffusionEngine:
                         prompt=prompt,
                         metrics=metrics,
                         latents=output.trajectory_latents,
+                        custom_output=output.custom_output or {},
                         multimodal_output=mm_output,
                     ),
                 ]
@@ -218,11 +216,12 @@ class DiffusionEngine:
                             prompt=prompt,
                             metrics=metrics,
                             latents=output.trajectory_latents,
+                            custom_output=output.custom_output or {},
                             multimodal_output=mm_output,
                         ),
                     )
 
-        return results
+            return results
 
     @staticmethod
     def make_engine(config: OmniDiffusionConfig) -> "DiffusionEngine":
