@@ -1098,7 +1098,6 @@ def _stage_worker(
         try:
             _batch_seq += 1
             gen_outputs: list[OmniRequestOutput | RequestOutput] = []
-            _pre_gen_ms = (_time.time() - _recv_dequeue_ts) * 1000.0
             _gen_t0 = _time.time()
             if stage_type == "diffusion":
                 stage_engine = cast(OmniDiffusion, stage_engine)
@@ -1145,7 +1144,6 @@ def _stage_worker(
             _agg_total_gen_time_ms += _gen_ms
 
             # Emit per-request results
-            _post_gen_t0 = _time.time()
             for i, rid in enumerate(batch_request_ids):
                 r_outputs = req_to_outputs.get(rid, [])
                 _metrics = make_request_stats(
@@ -1162,20 +1160,11 @@ def _stage_worker(
                     _metrics.stage_stats = make_stage_stats(_agg_total_tokens, _agg_total_gen_time_ms)
                 else:
                     _metrics.stage_stats = None
-                _t_serialize = _time.time()
                 try:
                     use_shm, payload = maybe_dump_to_shm(r_outputs, shm_threshold_bytes)
                 except Exception:
                     use_shm, payload = False, r_outputs
-                _t_serialize_ms = (_time.time() - _t_serialize) * 1000.0
 
-                _hop3_timing = {
-                    "generate_ms": _gen_ms,
-                    "serialize_ms": _t_serialize_ms,
-                    "use_shm": use_shm,
-                }
-
-                _t_enqueue = _time.time()
                 try:
                     if use_shm:
                         out_q.put(
@@ -1184,7 +1173,6 @@ def _stage_worker(
                                 "stage_id": stage_id,
                                 "engine_outputs_shm": payload,
                                 "metrics": _metrics,
-                                "_hop3_timing": _hop3_timing,
                             }
                         )
                     else:
@@ -1194,7 +1182,6 @@ def _stage_worker(
                                 "stage_id": stage_id,
                                 "engine_outputs": payload,
                                 "metrics": _metrics,
-                                "_hop3_timing": _hop3_timing,
                             }
                         )
                 except Exception:

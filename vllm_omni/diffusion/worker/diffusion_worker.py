@@ -376,26 +376,11 @@ class WorkerProc:
     def return_result(self, output: DiffusionOutput):
         """Reply to client, only on rank 0."""
         if self.result_mq is not None:
-            import time as _time
-
-            _t0 = _time.perf_counter()
             try:
                 pack_diffusion_output_shm(output)
-                _t_pack = (_time.perf_counter() - _t0) * 1000
             except Exception as e:
                 logger.warning("SHM pack failed, falling back to raw enqueue: %s", e)
-                _t_pack = 0.0
-            _t1 = _time.perf_counter()
             self.result_mq.enqueue(output)
-            _t_enqueue = (_time.perf_counter() - _t1) * 1000
-            _t_total = (_time.perf_counter() - _t0) * 1000
-            logger.info(
-                "Hop1 worker→scheduler: shm_pack=%.2f ms, mq.enqueue=%.2f ms, total=%.2f ms (rank %s)",
-                _t_pack,
-                _t_enqueue,
-                _t_total,
-                self.gpu_id,
-            )
 
     def recv_message(self):
         """Receive messages from broadcast queue."""

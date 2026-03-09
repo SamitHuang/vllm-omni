@@ -659,28 +659,8 @@ class AsyncOmni(OmniBase):
             )
             raise RuntimeError(result)
 
-        _t_load = time.perf_counter()
         engine_outputs = _load(result, obj_key="engine_outputs", shm_key="engine_outputs_shm")
-        _t_load_ms = (time.perf_counter() - _t_load) * 1000
 
-        _hop3 = result.get("_hop3_timing")
-        if _hop3:
-            logger.info(
-                "Hop3 stageWorker→orchestrator: "
-                "generate=%.2f ms, serialize(shm=%s)=%.2f ms, "
-                "orchestrator_deserialize=%.2f ms",
-                _hop3.get("generate_ms", 0),
-                _hop3.get("use_shm", "?"),
-                _hop3.get("serialize_ms", 0),
-                _t_load_ms,
-            )
-        elif _t_load_ms > 10:
-            logger.info(
-                "Hop3 orchestrator←stageWorker: deserialize took %.2f ms (req %s, stage %s)",
-                _t_load_ms,
-                req_id,
-                stage_id,
-            )
         if isinstance(engine_outputs, list):
             engine_outputs = engine_outputs[0]
 
