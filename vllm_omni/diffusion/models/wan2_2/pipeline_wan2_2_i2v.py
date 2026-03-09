@@ -337,9 +337,6 @@ class Wan22I2VPipeline(nn.Module, SupportImageInput, CFGParallelMixin, ProgressB
         num_frames = req.sampling_params.num_frames or frame_num
         num_steps = req.sampling_params.num_inference_steps or num_inference_steps
 
-        # print("D--: num_frames", num_frames)
-        # print("D--: height x width =", height, "x", width)
-
         # Respect per-request guidance_scale when explicitly provided.
         if req.sampling_params.guidance_scale_provided:
             guidance_scale = req.sampling_params.guidance_scale
@@ -539,8 +536,6 @@ class Wan22I2VPipeline(nn.Module, SupportImageInput, CFGParallelMixin, ProgressB
                     negative_kwargs=negative_kwargs,
                     cfg_normalize=False,
                 )
-
-                # print("D--: latent shape", latents.shape)
 
                 # Compute the previous noisy sample x_t -> x_t-1 with automatic CFG sync
                 latents = self.scheduler_step_maybe_with_cfg(noise_pred, t, latents, do_true_cfg)

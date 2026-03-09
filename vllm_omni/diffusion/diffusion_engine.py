@@ -67,7 +67,7 @@ class DiffusionEngine:
             raise e
 
     def step(self, request: OmniDiffusionRequest) -> list[OmniRequestOutput]:
-        diffusion_engine_start_time = time.time()
+        diffusion_engine_start_time = time.perf_counter()
         # Apply pre-processing if available
         preprocess_time = 0.0
         if self.pre_process_func is not None:
@@ -76,9 +76,9 @@ class DiffusionEngine:
             preprocess_time = time.perf_counter() - preprocess_start_time
             logger.info(f"Pre-processing completed in {preprocess_time:.4f} seconds")
 
-        exec_start_time = time.time()
+        exec_start_time = time.perf_counter()
         output = self.add_req_and_wait_for_response(request)
-        exec_total_time = time.time() - exec_start_time
+        exec_total_time = time.perf_counter() - exec_start_time
 
         if output.error:
             raise Exception(f"{output.error}")
@@ -123,7 +123,7 @@ class DiffusionEngine:
 
         metrics = {
             "preprocess_time_ms": preprocess_time * 1000,
-            "diffusion_engine_exec_time_ms": (time.time() - diffusion_engine_start_time) * 1000,
+            "diffusion_engine_exec_time_ms": (time.perf_counter() - diffusion_engine_start_time) * 1000,
             "diffusion_engine_total_time_ms": exec_total_time * 1000,
             "image_num": int(request.sampling_params.num_outputs_per_prompt),
             "resolution": int(request.sampling_params.resolution),
