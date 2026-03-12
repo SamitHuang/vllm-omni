@@ -265,7 +265,7 @@ class DiffusionCacheConfig:
     # we will re-generate the scm mask and refresh the cache context.
     num_inference_steps: int | None = None
     # Force refresh the cache at a specific step index hint, useful for models like
-    # Helios (multi-chunk denoise loop) and GLM-Image (image preprocessing step).
+    # GLM-Image (image preprocessing step in editing mode).
     force_refresh_step_hint: int | None = None
     # Policy for force refresh: "once" refreshes only at the hint step,
     # "repeat" refreshes every force_refresh_step_hint steps.
