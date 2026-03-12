@@ -61,6 +61,8 @@ def _build_db_cache_config(cache_config: Any) -> DBCacheConfig:
         max_cached_steps=cache_config.max_cached_steps,
         max_continuous_cached_steps=cache_config.max_continuous_cached_steps,
         residual_diff_threshold=cache_config.residual_diff_threshold,
+        force_refresh_step_hint=cache_config.force_refresh_step_hint,
+        force_refresh_step_policy=cache_config.force_refresh_step_policy,
     )
 
 
@@ -984,6 +986,125 @@ def enable_cache_for_bagel(pipeline: Any, cache_config: Any) -> Callable[[int], 
     return refresh_cache_context
 
 
+def enable_cache_for_helios(pipeline: Any, cache_config: Any) -> Callable[[int], None]:
+    """Enable cache-dit for Helios pipeline (multi-chunk denoise loop).
+
+    Helios splits num_frames into multiple chunks and runs multiple passes of the
+    transformer denoise loop. The cache context must be refreshed at the end of each
+    loop to prevent stale cache from the previous chunk leaking into the next one.
+    This is achieved by setting force_refresh_step_hint = num_inference_steps with
+    force_refresh_step_policy = "repeat".
+    """
+    db_cache_config = _build_db_cache_config(cache_config)
+
+    calibrator_config = None
+    if cache_config.enable_taylorseer:
+        calibrator_config = TaylorSeerCalibratorConfig(taylorseer_order=cache_config.taylorseer_order)
+        logger.info(f"TaylorSeer enabled with order={cache_config.taylorseer_order}")
+
+    logger.info(
+        f"Enabling cache-dit on Helios transformer: "
+        f"Fn={db_cache_config.Fn_compute_blocks}, "
+        f"Bn={db_cache_config.Bn_compute_blocks}, "
+        f"W={db_cache_config.max_warmup_steps}, "
+        f"force_refresh_step_policy={db_cache_config.force_refresh_step_policy}, "
+    )
+
+    cache_dit.enable_cache(
+        pipeline.transformer,
+        cache_config=db_cache_config,
+        calibrator_config=calibrator_config,
+    )
+
+    def refresh_cache_context(pipeline: Any, num_inference_steps: int, verbose: bool = True) -> None:
+        hint = cache_config.force_refresh_step_hint
+        if hint is None:
+            hint = num_inference_steps
+        policy = cache_config.force_refresh_step_policy
+        if policy == "once":
+            policy = "repeat"
+        if cache_config.scm_steps_mask_policy is None:
+            cache_dit.refresh_context(
+                pipeline.transformer,
+                cache_config=DBCacheConfig().reset(
+                    num_inference_steps=num_inference_steps,
+                    force_refresh_step_hint=hint,
+                    force_refresh_step_policy=policy,
+                ),
+                verbose=verbose,
+            )
+        else:
+            cache_dit.refresh_context(
+                pipeline.transformer,
+                cache_config=DBCacheConfig().reset(
+                    num_inference_steps=num_inference_steps,
+                    force_refresh_step_hint=hint,
+                    force_refresh_step_policy=policy,
+                    steps_computation_mask=cache_dit.steps_mask(
+                        mask_policy=cache_config.scm_steps_mask_policy,
+                        total_steps=num_inference_steps,
+                    ),
+                    steps_computation_policy=cache_config.scm_steps_policy,
+                ),
+                verbose=verbose,
+            )
+
+    return refresh_cache_context
+
+
+def enable_cache_for_glm_image(pipeline: Any, cache_config: Any) -> Callable[[int], None]:
+    """Enable cache-dit for GLM-Image pipeline.
+
+    GLM-Image processes prompt and image by calling the transformer before the
+    denoising loop. When an input image is provided (editing mode), the cache must
+    be force-refreshed after the preprocessing step so stale hidden states are
+    discarded. Set force_refresh_step_hint = 1 for editing, None for text-to-image.
+    """
+    db_cache_config = _build_db_cache_config(cache_config)
+
+    calibrator_config = None
+    if cache_config.enable_taylorseer:
+        calibrator_config = TaylorSeerCalibratorConfig(taylorseer_order=cache_config.taylorseer_order)
+        logger.info(f"TaylorSeer enabled with order={cache_config.taylorseer_order}")
+
+    logger.info(
+        f"Enabling cache-dit on GLM-Image transformer: "
+        f"Fn={db_cache_config.Fn_compute_blocks}, "
+        f"Bn={db_cache_config.Bn_compute_blocks}, "
+        f"W={db_cache_config.max_warmup_steps}, "
+        f"force_refresh_step_hint={db_cache_config.force_refresh_step_hint}, "
+    )
+
+    cache_dit.enable_cache(
+        pipeline.transformer,
+        cache_config=db_cache_config,
+        calibrator_config=calibrator_config,
+    )
+
+    def refresh_cache_context(pipeline: Any, num_inference_steps: int, verbose: bool = True) -> None:
+        if cache_config.scm_steps_mask_policy is None:
+            cache_dit.refresh_context(
+                pipeline.transformer,
+                num_inference_steps=num_inference_steps,
+                verbose=verbose,
+            )
+        else:
+            cache_dit.refresh_context(
+                pipeline.transformer,
+                cache_config=DBCacheConfig().reset(
+                    num_inference_steps=num_inference_steps,
+                    steps_computation_mask=cache_dit.steps_mask(
+                        mask_policy=cache_config.scm_steps_mask_policy,
+                        total_steps=num_inference_steps,
+                    ),
+                    steps_computation_policy=cache_config.scm_steps_policy,
+                ),
+                verbose=verbose,
+            )
+
+    return refresh_cache_context
+
+
 # Register custom cache-dit enablers after function definitions
 CUSTOM_DIT_ENABLERS.update(
     {
@@ -998,6 +1119,9 @@ CUSTOM_DIT_ENABLERS.update(
         "LTX2Pipeline": enable_cache_for_ltx2,
         "LTX2ImageToVideoPipeline": enable_cache_for_ltx2,
         "BagelPipeline": enable_cache_for_bagel,
+        "HeliosPipeline": enable_cache_for_helios,
+        "HeliosPyramidPipeline": enable_cache_for_helios,
+        "GlmImagePipeline": enable_cache_for_glm_image,
     }
 )
 
