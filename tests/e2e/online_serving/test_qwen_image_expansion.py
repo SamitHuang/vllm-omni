@@ -95,6 +95,8 @@ def _get_diffusion_feature_cases(model: str):
                     "--vae-patch-parallel-size",
                     "2",
                     "--vae-use-tiling",
+                    "--quantization-config",
+                    '{"method":"fp8"}',
                 ],
             ),
             id="vae_patch_parallel_2",
