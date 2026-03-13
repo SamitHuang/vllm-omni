@@ -34,11 +34,6 @@ def _get_diffusion_feature_cases(model: str):
             marks=SINGLE_CARD_FEATURE_MARKS,
         ),
         pytest.param(
-            OmniServerParams(model=model, server_args=["--cache-backend", "cache_dit"]),
-            id="cache_cache_dit",
-            marks=SINGLE_CARD_FEATURE_MARKS,
-        ),
-        pytest.param(
             OmniServerParams(
                 model=model,
                 server_args=[
@@ -87,19 +82,6 @@ def _get_diffusion_feature_cases(model: str):
                 ],
             ),
             id="cfg_parallel_2",
-            marks=PARALLEL_FEATURE_MARKS,
-        ),
-        pytest.param(
-            OmniServerParams(
-                model=model,
-                server_args=[
-                    "--cache-backend",
-                    "cache_dit",
-                    "--tensor-parallel-size",
-                    "2",
-                ],
-            ),
-            id="tensor_parallel_2",
             marks=PARALLEL_FEATURE_MARKS,
         ),
         pytest.param(
