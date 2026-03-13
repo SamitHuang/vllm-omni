@@ -4,9 +4,10 @@ and are supported by the following text-to-image models:
 - Qwen-Image
 - Qwen-Image-2512
 
-Refer to PR #1682 (Qwen-Image-Edit L4 expansion test) for the test structure.
+One feature per test case, matching the Test Plan in PR #1682 (Qwen-Image-Edit).
 Supported features for Qwen-Image series: TeaCache, Cache-DiT, Ulysses-SP, Ring-Attention,
-CFG-Parallel, Tensor-Parallel, VAE-Patch-Parallel (see docs/user_guide/diffusion_acceleration.md).
+CFG-Parallel, Tensor-Parallel, VAE-Patch-Parallel, CPU offload (layerwise).
+See docs/user_guide/diffusion_acceleration.md.
 """
 
 import pytest
@@ -28,15 +29,25 @@ PARALLEL_FEATURE_MARKS = hardware_marks(res={"cuda": "H100"}, num_cards=2)
 def _get_diffusion_feature_cases(model: str):
     return [
         pytest.param(
+            OmniServerParams(model=model, server_args=["--cache-backend", "tea_cache"]),
+            id="cache_tea_cache",
+            marks=SINGLE_CARD_FEATURE_MARKS,
+        ),
+        pytest.param(
+            OmniServerParams(model=model, server_args=["--cache-backend", "cache_dit"]),
+            id="cache_cache_dit",
+            marks=SINGLE_CARD_FEATURE_MARKS,
+        ),
+        pytest.param(
             OmniServerParams(
                 model=model,
                 server_args=[
                     "--cache-backend",
-                    "tea_cache",
+                    "cache_dit",
                     "--enable-layerwise-offload",
                 ],
             ),
-            id="single_card_001",
+            id="layerwise_offload",
             marks=SINGLE_CARD_FEATURE_MARKS,
         ),
         pytest.param(
@@ -49,7 +60,7 @@ def _get_diffusion_feature_cases(model: str):
                     "2",
                 ],
             ),
-            id="parallel_001",
+            id="ulysses_2",
             marks=PARALLEL_FEATURE_MARKS,
         ),
         pytest.param(
@@ -62,7 +73,7 @@ def _get_diffusion_feature_cases(model: str):
                     "2",
                 ],
             ),
-            id="parallel_002",
+            id="ring_2",
             marks=PARALLEL_FEATURE_MARKS,
         ),
         pytest.param(
@@ -75,7 +86,20 @@ def _get_diffusion_feature_cases(model: str):
                     "2",
                 ],
             ),
-            id="parallel_003",
+            id="cfg_parallel_2",
+            marks=PARALLEL_FEATURE_MARKS,
+        ),
+        pytest.param(
+            OmniServerParams(
+                model=model,
+                server_args=[
+                    "--cache-backend",
+                    "cache_dit",
+                    "--tensor-parallel-size",
+                    "2",
+                ],
+            ),
+            id="tensor_parallel_2",
             marks=PARALLEL_FEATURE_MARKS,
         ),
         pytest.param(
@@ -91,7 +115,7 @@ def _get_diffusion_feature_cases(model: str):
                     "--vae-use-tiling",
                 ],
             ),
-            id="parallel_004",
+            id="vae_patch_parallel_2",
             marks=PARALLEL_FEATURE_MARKS,
         ),
     ]
@@ -105,10 +129,8 @@ def _get_diffusion_feature_cases(model: str):
     indirect=True,
 )
 def test_qwen_image(omni_server: OmniServer, openai_client: OpenAIClientHandler):
-    """Test all diffusion features with Qwen-Image (text-to-image) in regular end-user scenarios."""
+    """Test each diffusion feature with Qwen-Image (text-to-image), one feature per case."""
     messages = dummy_messages_from_mix_data(content_text=T2I_PROMPT)
-
-    # CFG parallel is only activated when a negative prompt and true_cfg_scale > 1.0 are both present
     request_config = {
         "model": omni_server.model,
         "messages": messages,
@@ -121,7 +143,6 @@ def test_qwen_image(omni_server: OmniServer, openai_client: OpenAIClientHandler)
             "seed": 42,
         },
     }
-
     openai_client.send_diffusion_request(request_config)
 
 
@@ -133,10 +154,8 @@ def test_qwen_image(omni_server: OmniServer, openai_client: OpenAIClientHandler)
     indirect=True,
 )
 def test_qwen_image_2512(omni_server: OmniServer, openai_client: OpenAIClientHandler):
-    """Test all diffusion features with Qwen-Image-2512 (text-to-image) in regular end-user scenarios."""
+    """Test each diffusion feature with Qwen-Image-2512 (text-to-image), one feature per case."""
     messages = dummy_messages_from_mix_data(content_text=T2I_PROMPT)
-
-    # CFG parallel is only activated when a negative prompt and true_cfg_scale > 1.0 are both present
     request_config = {
         "model": omni_server.model,
         "messages": messages,
@@ -149,5 +168,4 @@ def test_qwen_image_2512(omni_server: OmniServer, openai_client: OpenAIClientHan
             "seed": 42,
         },
     }
-
     openai_client.send_diffusion_request(request_config)
