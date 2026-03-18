@@ -10,11 +10,9 @@
 #   bash run_server_ltx2.sh cache-dit        # 1 GPU + Cache-DiT
 #   bash run_server_ltx2.sh best-combo       # 4-GPU Ulysses SP + Cache-DiT
 #
-# Benchmark on 8×H800 (480×768, 41 frames, 20 steps):
-#   baseline    : 10.66s (1.00×)
-#   ulysses4    :  7.47s (1.43×)  lossless
-#   cache-dit   :  6.43s (1.66×)  lossy
-#   best-combo  :  6.04s (1.77×)  lossless + lossy
+# Online serving benchmarks on H800 (480×768, 41 frames, 20 steps):
+#   baseline    : 10.3s inference (1.00×)
+#   cache-dit   :  7.4s inference (~1.4×)  lossy, variable per request
 
 set -euo pipefail
 

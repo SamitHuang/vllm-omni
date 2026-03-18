@@ -241,20 +241,28 @@ bash run_server_ltx2.sh best-combo
 
 #### Optimization Benchmarks
 
-Benchmarked on 8×H800 (480×768, 41 frames, 20 steps):
+Benchmarked on H800, online serving e2e (480×768, 41 frames, 20 steps, `seed=42`).
+"Server inference" is the time reported by the server; "E2E" includes HTTP + poll overhead.
 
-| Preset | Server Command | Time (s) | Speedup | Type |
-|--------|---------------|----------|---------|------|
-| `baseline` | `--enforce-eager` | 10.66 | 1.00× | — |
-| `ulysses2` | `--enforce-eager --usp 2` | 8.22 | 1.30× | Lossless |
-| `ulysses4` | `--enforce-eager --usp 4` | 7.47 | 1.43× | Lossless |
-| `cache-dit` | `--enforce-eager --cache-backend cache_dit` | 6.43 | 1.66× | Lossy |
-| `best-combo` | `--enforce-eager --usp 4 --cache-backend cache_dit` | 6.04 | 1.77× | Lossless + Lossy |
+| Preset | Server Command | Inference (s) | Speedup | Type |
+|--------|---------------|---------------|---------|------|
+| `baseline` | `--enforce-eager` | 10.3 | 1.00× | — |
+| `cache-dit` | `--enforce-eager --cache-backend cache_dit` | 7.4 avg | ~1.4× | Lossy |
+
+!!! note "Observations"
+    - **torch.compile**: On H800, warm-request inference time matches the eager baseline (~10.3s).
+      The first request pays ~6s compilation overhead. Benefit depends on model architecture.
+    - **Ulysses SP (4 GPU)**: Server inference is unchanged (~10.3s) for 41-frame generation.
+      SP overhead outweighs gains at this sequence length. Larger resolutions or frame counts
+      may benefit more.
+    - **Cache-DiT**: Inference varies per request (6–10s) due to dynamic caching decisions.
+      Average is ~7.4s (~1.4× speedup) with slight quality tradeoff.
 
 !!! tip "Deployment Recommendations"
-    - For **production with quality priority**: use `ulysses4` (lossless, 1.43× speedup)
-    - For **maximum throughput**: use `best-combo` (1.77× speedup, slight quality tradeoff from Cache-DiT)
-    - FP8 quantization (`--quantization fp8`) reduces VRAM usage but does not improve speed on compute-bound H800 GPUs
+    - For **production with quality priority**: use `baseline` with `--enforce-eager`
+    - For **throughput with acceptable quality tradeoff**: use `cache-dit` (~1.4× speedup)
+    - For **large-scale video** (high resolution, many frames): Ulysses SP may provide
+      better scaling — benchmark for your specific workload
     - `--enforce-eager` is recommended to avoid torch.compile warmup latency on first request
 
 ### Send Requests (curl)
