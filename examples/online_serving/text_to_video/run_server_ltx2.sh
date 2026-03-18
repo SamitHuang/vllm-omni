@@ -15,6 +15,7 @@
 #   compile     : ~10.3s warm     (~1.00×) first request +6s warmup
 #   ulysses4    : ~10.3s          (~1.00×) no gain at 41 frames
 #   cache-dit   :  7.4s avg       (~1.4×)  lossy, variable per request
+#   best-combo  :  4.7s avg       (~2.2×)  4-GPU ulysses + cache-dit
 
 set -euo pipefail
 
@@ -59,7 +60,7 @@ case "$PRESET" in
         echo "  ulysses2    - 2-GPU Ulysses SP (lossless)"
         echo "  ulysses4    - 4-GPU Ulysses SP (lossless)"
         echo "  cache-dit   - 1 GPU + Cache-DiT (lossy, ~1.4× speedup)"
-        echo "  best-combo  - 4-GPU Ulysses SP + Cache-DiT"
+        echo "  best-combo  - 4-GPU Ulysses SP + Cache-DiT (~2.2× speedup)"
         echo "  compile     - 1 GPU + torch.compile (slower first request)"
         echo ""
         echo "Environment variables:"

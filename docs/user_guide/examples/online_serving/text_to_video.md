@@ -235,7 +235,7 @@ bash run_server_ltx2.sh ulysses4
 # Cache-DiT lossy acceleration (1 GPU, ~1.4× speedup)
 bash run_server_ltx2.sh cache-dit
 
-# Best combo: 4-GPU Ulysses SP + Cache-DiT
+# Best combo: 4-GPU Ulysses SP + Cache-DiT (~2.2× speedup)
 bash run_server_ltx2.sh best-combo
 ```
 
@@ -250,22 +250,24 @@ Benchmarked on H800, online serving (480×768, 41 frames, 20 steps, `seed=42`).
 | `compile` | *(default, no --enforce-eager)* | ~10.3 (warm) | ~1.00× | Lossless |
 | `ulysses4` | `--enforce-eager --usp 4` | ~10.3 | ~1.00× | Lossless |
 | `cache-dit` | `--enforce-eager --cache-backend cache_dit` | 7.4 avg | ~1.4× | Lossy |
+| `best-combo` | `--enforce-eager --usp 4 --cache-backend cache_dit` | 4.7 avg | **~2.2×** | Lossless + Lossy |
 
 !!! note "Observations"
     - **torch.compile**: On H800, warm-request inference time matches the eager baseline (~10.3s).
       The first request pays ~6s compilation overhead. Benefit depends on model architecture and GPU.
-    - **Ulysses SP (4 GPU)**: No measurable speedup for 41-frame generation at this resolution.
-      Communication overhead outweighs gains at this sequence length. Larger resolutions or
-      frame counts may benefit more.
+    - **Ulysses SP (4 GPU)**: No measurable speedup alone for 41-frame generation at this resolution.
+      Communication overhead outweighs gains at this sequence length.
     - **Cache-DiT**: Inference varies per request (6–10s) due to dynamic caching decisions.
       Average is ~7.4s (~1.4× speedup) with slight quality tradeoff.
+    - **Best combo**: 4-GPU Ulysses SP + Cache-DiT synergize well — Cache-DiT reduces per-step
+      computation, making the communication overhead of Ulysses SP worthwhile. Average ~4.7s
+      (~2.2× speedup).
     - **FP8 quantization**: Reduces VRAM but does not speed up LTX-2 on H800 (compute-bound).
 
 !!! tip "Deployment Recommendations"
     - For **production with quality priority**: use `baseline` with `--enforce-eager`
-    - For **throughput with acceptable quality tradeoff**: use `cache-dit` (~1.4× speedup)
-    - For **large-scale video** (high resolution, many frames): Ulysses SP may provide
-      better scaling — benchmark for your specific workload
+    - For **maximum throughput** (4 GPUs, quality tradeoff): use `best-combo` (~2.2× speedup)
+    - For **single-GPU throughput**: use `cache-dit` (~1.4× speedup)
     - `--enforce-eager` is recommended to avoid torch.compile warmup latency on first request
 
 ### Send Requests (curl)
