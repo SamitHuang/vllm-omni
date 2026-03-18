@@ -2,18 +2,26 @@
 
 Source <https://github.com/vllm-project/vllm-omni/tree/main/examples/online_serving/text_to_video>.
 
+This example demonstrates how to deploy text-to-video models for online video generation using vLLM-Omni.
 
-This example demonstrates how to deploy the Wan2.2 text-to-video model for online video generation using vLLM-Omni.
+## Supported Models
 
-## Start Server
+| Model | Model ID |
+|-------|----------|
+| Wan2.2 T2V | `Wan-AI/Wan2.2-T2V-A14B-Diffusers` |
+| LTX-2 | `Lightricks/LTX-2` |
 
-### Basic Start
+## Wan2.2 T2V
+
+### Start Server
+
+#### Basic Start
 
 ```bash
 vllm serve Wan-AI/Wan2.2-T2V-A14B-Diffusers --omni --port 8091
 ```
 
-### Start with Parameters
+#### Start with Parameters
 
 Or use the startup script:
 
@@ -202,13 +210,89 @@ while true; do
 done
 ```
 
+## LTX-2
+
+### Start Server
+
+#### Basic Start
+
+```bash
+vllm serve Lightricks/LTX-2 --omni --port 8098 \
+    --enforce-eager --flow-shift 1.0 --boundary-ratio 1.0
+```
+
+#### Start with Optimization Presets
+
+Use the LTX-2 startup script with built-in optimization presets:
+
+```bash
+# Baseline (1 GPU, eager)
+bash run_server_ltx2.sh baseline
+
+# 4-GPU Ulysses sequence parallelism (lossless, ~1.4× speedup)
+bash run_server_ltx2.sh ulysses4
+
+# Cache-DiT lossy acceleration (1 GPU, ~1.7× speedup)
+bash run_server_ltx2.sh cache-dit
+
+# Best combo: 4-GPU Ulysses SP + Cache-DiT (~1.8× speedup)
+bash run_server_ltx2.sh best-combo
+```
+
+#### Optimization Benchmarks
+
+Benchmarked on 8×H800 (480×768, 41 frames, 20 steps):
+
+| Preset | Server Command | Time (s) | Speedup | Type |
+|--------|---------------|----------|---------|------|
+| `baseline` | `--enforce-eager` | 10.66 | 1.00× | — |
+| `ulysses2` | `--enforce-eager --usp 2` | 8.22 | 1.30× | Lossless |
+| `ulysses4` | `--enforce-eager --usp 4` | 7.47 | 1.43× | Lossless |
+| `cache-dit` | `--enforce-eager --cache-backend cache_dit` | 6.43 | 1.66× | Lossy |
+| `best-combo` | `--enforce-eager --usp 4 --cache-backend cache_dit` | 6.04 | 1.77× | Lossless + Lossy |
+
+!!! tip "Deployment Recommendations"
+    - For **production with quality priority**: use `ulysses4` (lossless, 1.43× speedup)
+    - For **maximum throughput**: use `best-combo` (1.77× speedup, slight quality tradeoff from Cache-DiT)
+    - FP8 quantization (`--quantization fp8`) reduces VRAM usage but does not improve speed on compute-bound H800 GPUs
+    - `--enforce-eager` is recommended to avoid torch.compile warmup latency on first request
+
+### Send Requests (curl)
+
+```bash
+# Using the provided script
+bash run_curl_ltx2.sh
+
+# Or directly
+curl -sS -X POST http://localhost:8098/v1/videos \
+  -H "Accept: application/json" \
+  -F "prompt=A serene lakeside sunrise with mist over the water." \
+  -F "width=768" \
+  -F "height=480" \
+  -F "num_frames=41" \
+  -F "fps=24" \
+  -F "num_inference_steps=20" \
+  -F "guidance_scale=3.0" \
+  -F "seed=42"
+```
+
+For more details on parallelism acceleration, see the [Parallelism Acceleration Guide](../../diffusion/parallelism_acceleration.md).
+
 ## Example materials
 
-??? abstract "run_curl_text_to_video.sh"
+??? abstract "run_server.sh (Wan2.2)"
+    ``````sh
+    --8<-- "examples/online_serving/text_to_video/run_server.sh"
+    ``````
+??? abstract "run_curl_text_to_video.sh (Wan2.2)"
     ``````sh
     --8<-- "examples/online_serving/text_to_video/run_curl_text_to_video.sh"
     ``````
-??? abstract "run_server.sh"
+??? abstract "run_server_ltx2.sh"
     ``````sh
-    --8<-- "examples/online_serving/text_to_video/run_server.sh"
+    --8<-- "examples/online_serving/text_to_video/run_server_ltx2.sh"
+    ``````
+??? abstract "run_curl_ltx2.sh"
+    ``````sh
+    --8<-- "examples/online_serving/text_to_video/run_curl_ltx2.sh"
     ``````
