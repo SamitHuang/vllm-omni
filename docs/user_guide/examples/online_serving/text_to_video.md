@@ -229,34 +229,37 @@ Use the LTX-2 startup script with built-in optimization presets:
 # Baseline (1 GPU, eager)
 bash run_server_ltx2.sh baseline
 
-# 4-GPU Ulysses sequence parallelism (lossless, ~1.4× speedup)
+# 4-GPU Ulysses sequence parallelism (lossless)
 bash run_server_ltx2.sh ulysses4
 
-# Cache-DiT lossy acceleration (1 GPU, ~1.7× speedup)
+# Cache-DiT lossy acceleration (1 GPU, ~1.4× speedup)
 bash run_server_ltx2.sh cache-dit
 
-# Best combo: 4-GPU Ulysses SP + Cache-DiT (~1.8× speedup)
+# Best combo: 4-GPU Ulysses SP + Cache-DiT
 bash run_server_ltx2.sh best-combo
 ```
 
 #### Optimization Benchmarks
 
-Benchmarked on H800, online serving e2e (480×768, 41 frames, 20 steps, `seed=42`).
-"Server inference" is the time reported by the server; "E2E" includes HTTP + poll overhead.
+Benchmarked on H800, online serving (480×768, 41 frames, 20 steps, `seed=42`).
+"Inference" is the server-reported inference time; excludes HTTP/poll overhead.
 
 | Preset | Server Command | Inference (s) | Speedup | Type |
 |--------|---------------|---------------|---------|------|
 | `baseline` | `--enforce-eager` | 10.3 | 1.00× | — |
+| `compile` | *(default, no --enforce-eager)* | ~10.3 (warm) | ~1.00× | Lossless |
+| `ulysses4` | `--enforce-eager --usp 4` | ~10.3 | ~1.00× | Lossless |
 | `cache-dit` | `--enforce-eager --cache-backend cache_dit` | 7.4 avg | ~1.4× | Lossy |
 
 !!! note "Observations"
     - **torch.compile**: On H800, warm-request inference time matches the eager baseline (~10.3s).
-      The first request pays ~6s compilation overhead. Benefit depends on model architecture.
-    - **Ulysses SP (4 GPU)**: Server inference is unchanged (~10.3s) for 41-frame generation.
-      SP overhead outweighs gains at this sequence length. Larger resolutions or frame counts
-      may benefit more.
+      The first request pays ~6s compilation overhead. Benefit depends on model architecture and GPU.
+    - **Ulysses SP (4 GPU)**: No measurable speedup for 41-frame generation at this resolution.
+      Communication overhead outweighs gains at this sequence length. Larger resolutions or
+      frame counts may benefit more.
     - **Cache-DiT**: Inference varies per request (6–10s) due to dynamic caching decisions.
       Average is ~7.4s (~1.4× speedup) with slight quality tradeoff.
+    - **FP8 quantization**: Reduces VRAM but does not speed up LTX-2 on H800 (compute-bound).
 
 !!! tip "Deployment Recommendations"
     - For **production with quality priority**: use `baseline` with `--enforce-eager`

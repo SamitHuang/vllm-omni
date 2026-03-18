@@ -12,7 +12,9 @@
 #
 # Online serving benchmarks on H800 (480×768, 41 frames, 20 steps):
 #   baseline    : 10.3s inference (1.00×)
-#   cache-dit   :  7.4s inference (~1.4×)  lossy, variable per request
+#   compile     : ~10.3s warm     (~1.00×) first request +6s warmup
+#   ulysses4    : ~10.3s          (~1.00×) no gain at 41 frames
+#   cache-dit   :  7.4s avg       (~1.4×)  lossy, variable per request
 
 set -euo pipefail
 
@@ -56,8 +58,8 @@ case "$PRESET" in
         echo "  baseline    - 1 GPU, eager execution (reference)"
         echo "  ulysses2    - 2-GPU Ulysses SP (lossless)"
         echo "  ulysses4    - 4-GPU Ulysses SP (lossless)"
-        echo "  cache-dit   - 1 GPU + Cache-DiT (lossy, ~1.7× speedup)"
-        echo "  best-combo  - 4-GPU Ulysses SP + Cache-DiT (~1.8× speedup)"
+        echo "  cache-dit   - 1 GPU + Cache-DiT (lossy, ~1.4× speedup)"
+        echo "  best-combo  - 4-GPU Ulysses SP + Cache-DiT"
         echo "  compile     - 1 GPU + torch.compile (slower first request)"
         echo ""
         echo "Environment variables:"
