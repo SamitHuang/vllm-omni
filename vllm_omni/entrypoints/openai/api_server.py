@@ -21,7 +21,7 @@ from typing import Annotated, Any, Literal, cast
 import httpx
 import vllm.envs as envs
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, WebSocket
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from PIL import Image
 from pydantic import BaseModel, Field
 from starlette.datastructures import State
@@ -1798,6 +1798,57 @@ async def _run_video_generation_job(
         raise
 
 
+async def _prepare_video_generation(
+    raw_request: Request,
+    request_data: dict[str, Any],
+    input_reference_bytes: bytes | None,
+) -> tuple[VideoGenerationRequest, "OmniOpenAIServingVideo", str, ReferenceImage | None]:
+    """Shared validation, request construction, handler resolution, and image
+    decoding used by both the async and sync video creation endpoints."""
+    if request_data.get("image_reference") is not None and input_reference_bytes is not None:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST.value,
+            detail="Provide either input_reference or image_reference, not both.",
+        )
+
+    request_data = {k: v for k, v in request_data.items() if v is not None}
+    request = VideoGenerationRequest(**request_data)
+
+    handler = Omnivideo(raw_request)
+    if handler is None:
+        raise HTTPException(
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE.value,
+            detail="Video generation handler not initialized.",
+        )
+    logger.info("Video generation handler: %s", type(handler).__name__)
+    try:
+        app_model_name, app_stage_configs = _resolve_video_runtime_context(raw_request)
+        effective_model_name = handler.model_name or app_model_name or request.model or "unknown"
+        if request.model is not None and effective_model_name is not None and request.model != effective_model_name:
+            logger.warning(
+                "Model mismatch: request specifies '%s' but server is running '%s'. Using server model.",
+                request.model,
+                effective_model_name,
+            )
+        handler.set_stage_configs_if_missing(app_stage_configs)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Video generation failed: %s", e)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
+            detail=f"Video generation failed: {str(e)}",
+        )
+
+    try:
+        image_data = await decode_input_reference(request.image_reference, input_reference_bytes)
+    except InvalidInputReferenceError as exc:
+        raise HTTPException(400, detail=str(exc) or "Invalid input reference.") from exc
+
+    reference_image = ReferenceImage(data=image_data) if image_data is not None else None
+    return request, handler, effective_model_name, reference_image
+
+
 @router.post(
     "/v1/videos",
     responses={
@@ -1869,19 +1920,12 @@ async def create_video(
         unavailable, or job initialization fails.
     """
     input_reference_bytes = await input_reference.read() if input_reference is not None else None
-    parsed_image_reference = _parse_form_json(image_reference)
-    if parsed_image_reference is not None and input_reference_bytes is not None:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST.value,
-            detail="Provide either input_reference or image_reference, not both.",
-        )
-
     request_data: dict[str, Any] = {
         "prompt": prompt,
         "model": model,
         "seconds": seconds,
         "size": size,
-        "image_reference": parsed_image_reference,
+        "image_reference": _parse_form_json(image_reference),
         "user": user,
         "width": width,
         "height": height,
@@ -1898,46 +1942,123 @@ async def create_video(
         "lora": _parse_form_json(lora),
     }
 
-    request_data = {k: v for k, v in request_data.items() if v is not None}
-    request = VideoGenerationRequest(**request_data)
-
-    handler = Omnivideo(raw_request)
-    if handler is None:
-        raise HTTPException(
-            status_code=HTTPStatus.SERVICE_UNAVAILABLE.value,
-            detail="Video generation handler not initialized.",
-        )
-    logger.info("Video generation handler: %s", type(handler).__name__)
-    try:
-        app_model_name, app_stage_configs = _resolve_video_runtime_context(raw_request)
-        effective_model_name = handler.model_name or app_model_name or request.model or "unknown"
-        if request.model is not None and effective_model_name is not None and request.model != effective_model_name:
-            logger.warning(
-                "Model mismatch: request specifies '%s' but server is running '%s'. Using server model.",
-                request.model,
-                effective_model_name,
-            )
-        handler.set_stage_configs_if_missing(app_stage_configs)
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("Video generation failed: %s", e)
-        raise HTTPException(
-            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
-            detail=f"Video generation failed: {str(e)}",
-        )
+    request, handler, effective_model_name, reference_image = await _prepare_video_generation(
+        raw_request,
+        request_data,
+        input_reference_bytes,
+    )
     ref = video_response_from_request(effective_model_name, request)
-
-    try:
-        image_data = await decode_input_reference(request.image_reference, input_reference_bytes)
-    except InvalidInputReferenceError as exc:
-        raise HTTPException(400, detail=str(exc) or "Invalid input reference.") from exc
-
-    reference_image = ReferenceImage(data=image_data) if image_data is not None else image_data
     await VIDEO_STORE.upsert(ref.id, ref)
     task = asyncio.create_task(_run_video_generation_job(handler, request, ref.id, reference_image))
     await VIDEO_TASKS.upsert(ref.id, task)
     return ref
+
+
+@router.post(
+    "/v1/videos/sync",
+    responses={
+        HTTPStatus.OK.value: {"content": {"video/mp4": {}}},
+        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+        HTTPStatus.SERVICE_UNAVAILABLE.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+    },
+)
+async def create_video_sync(
+    raw_request: Request,
+    prompt: str = Form(...),
+    input_reference: UploadFile | None = File(default=None),
+    image_reference: str | None = Form(default=None),
+    model: str | None = Form(default=None),
+    seconds: SecondStr | None = Form(default=None),
+    size: SizeStr | None = Form(default=None),
+    user: str | None = Form(default=None),
+    width: int | None = Form(default=None),
+    height: int | None = Form(default=None),
+    num_frames: int | None = Form(default=None),
+    fps: int | None = Form(default=None),
+    num_inference_steps: int | None = Form(default=None),
+    guidance_scale: float | None = Form(default=None),
+    guidance_scale_2: float | None = Form(default=None),
+    boundary_ratio: float | None = Form(default=None),
+    flow_shift: float | None = Form(default=None),
+    true_cfg_scale: float | None = Form(default=None),
+    seed: int | None = Form(default=None),
+    negative_prompt: str | None = Form(default=None),
+    lora: str | None = Form(default=None),
+) -> Response:
+    """Synchronous video generation endpoint.
+
+    Unlike ``POST /v1/videos`` which queues a background job and returns
+    immediately, this endpoint blocks until generation completes and returns
+    the raw video bytes directly.  Designed for benchmark and testing
+    scenarios where one-shot request/response latency measurement is needed.
+
+    The response body is the generated video file (``video/mp4``).  Metadata
+    is returned via response headers:
+
+    - ``X-Request-Id``: unique identifier for this generation request.
+    - ``X-Model``: model name used for generation.
+    - ``X-Inference-Time-S``: wall-clock inference time in seconds.
+    """
+    input_reference_bytes = await input_reference.read() if input_reference is not None else None
+    request_data: dict[str, Any] = {
+        "prompt": prompt,
+        "model": model,
+        "seconds": seconds,
+        "size": size,
+        "image_reference": _parse_form_json(image_reference),
+        "user": user,
+        "width": width,
+        "height": height,
+        "num_frames": num_frames,
+        "fps": fps,
+        "num_inference_steps": num_inference_steps,
+        "guidance_scale": guidance_scale,
+        "guidance_scale_2": guidance_scale_2,
+        "boundary_ratio": boundary_ratio,
+        "flow_shift": flow_shift,
+        "true_cfg_scale": true_cfg_scale,
+        "seed": seed,
+        "negative_prompt": negative_prompt,
+        "lora": _parse_form_json(lora),
+    }
+
+    request, handler, effective_model_name, reference_image = await _prepare_video_generation(
+        raw_request,
+        request_data,
+        input_reference_bytes,
+    )
+
+    request_id = f"video_sync_{uuid.uuid4().hex}"
+    started_at = time.perf_counter()
+    try:
+        gen_response = await handler.generate_videos(request, request_id, reference_image=reference_image)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Sync video generation failed for request_id=%s", request_id)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
+            detail=f"Video generation failed: {str(exc)}",
+        ) from exc
+    inference_time_s = time.perf_counter() - started_at
+
+    if not gen_response.data or not gen_response.data[0].b64_json:
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
+            detail="Video generation completed but returned no outputs.",
+        )
+
+    video_bytes = base64.b64decode(gen_response.data[0].b64_json)
+    return Response(
+        content=video_bytes,
+        media_type="video/mp4",
+        headers={
+            "X-Request-Id": request_id,
+            "X-Model": effective_model_name,
+            "X-Inference-Time-S": f"{inference_time_s:.3f}",
+        },
+    )
 
 
 @router.get("/v1/videos", response_model=VideoListResponse)
