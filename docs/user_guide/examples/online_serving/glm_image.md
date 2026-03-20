@@ -104,6 +104,32 @@ curl -s http://localhost:8091/v1/chat/completions \
   }' | jq -r '.choices[0].message.content[0].image_url.url' | cut -d',' -f2- | base64 -d > output.png
 ```
 
+**Using OpenAI SDK**
+
+```python
+from openai import OpenAI
+import base64
+
+client = OpenAI(base_url="http://localhost:8091/v1", api_key="none")
+
+response = client.chat.completions.create(
+    model="zai-org/GLM-Image",
+    messages=[{"role": "user", "content": "A beautiful sunset over the ocean"}],
+    extra_body={
+        "height": 1024,
+        "width": 1024,
+        "num_inference_steps": 50,
+        "guidance_scale": 1.5,
+        "seed": 42,
+    },
+)
+
+img_url = response.choices[0].message.content[0].image_url.url
+_, b64_data = img_url.split(",", 1)
+with open("output.png", "wb") as f:
+    f.write(base64.b64decode(b64_data))
+```
+
 Or use the script:
 
 ```bash
@@ -156,7 +182,10 @@ Or use the script:
 bash run_curl_image_edit.sh input.png "Convert to watercolor style"
 ```
 
-## Generation Parameters (extra_body)
+## Generation Parameters
+
+These can be passed as top-level fields in curl/requests, or via `extra_body` in the OpenAI SDK.
+See the [Diffusion Chat API guide](../../../../serving/diffusion_chat_api.md) for details.
 
 | Parameter             | Type  | Default | Description                         |
 | --------------------- | ----- | ------- | ----------------------------------- |

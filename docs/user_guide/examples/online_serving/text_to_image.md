@@ -71,13 +71,39 @@ curl -s http://localhost:8091/v1/chat/completions \
   }' | jq -r '.choices[0].message.content[0].image_url.url' | cut -d',' -f2- | base64 -d > output.png
 ```
 
-### Method 2: Using Python Client
+### Method 2: Using OpenAI Python SDK
+
+```python
+from openai import OpenAI
+import base64
+
+client = OpenAI(base_url="http://localhost:8091/v1", api_key="none")
+
+response = client.chat.completions.create(
+    model="Qwen/Qwen-Image",
+    messages=[{"role": "user", "content": "A beautiful landscape painting"}],
+    extra_body={
+        "height": 1024,
+        "width": 1024,
+        "num_inference_steps": 50,
+        "true_cfg_scale": 4.0,
+        "seed": 42,
+    },
+)
+
+img_url = response.choices[0].message.content[0].image_url.url
+_, b64_data = img_url.split(",", 1)
+with open("output.png", "wb") as f:
+    f.write(base64.b64decode(b64_data))
+```
+
+### Method 3: Using Python Client Script
 
 ```bash
 python openai_chat_client.py --prompt "A beautiful landscape painting" --output output.png
 ```
 
-### Method 3: Using Gradio Demo
+### Method 4: Using Gradio Demo
 
 ```bash
 python gradio_demo.py
@@ -151,7 +177,7 @@ lora_adapter/
 
 ### Generation with Parameters
 
-Use `extra_body` to pass generation parameters:
+Wrap generation parameters inside `extra_body` in the request JSON:
 
 ```json
 {
@@ -168,6 +194,21 @@ Use `extra_body` to pass generation parameters:
 }
 ```
 
+!!! tip "Using the OpenAI SDK"
+    When using the OpenAI Python SDK, pass these parameters via the `extra_body`
+    keyword argument. The SDK merges them into the top-level request body automatically:
+
+    ```python
+    client.chat.completions.create(
+        model="Qwen/Qwen-Image",
+        messages=[...],
+        extra_body={"height": 1024, "width": 1024, "num_inference_steps": 50},
+    )
+    ```
+
+    For details on how generation parameters are handled across different clients, see the
+    [Diffusion Chat API guide](../../../../serving/diffusion_chat_api.md).
+
 ### Multimodal Input (Text + Structured Content)
 
 ```json
@@ -183,7 +224,7 @@ Use `extra_body` to pass generation parameters:
 }
 ```
 
-## Generation Parameters (extra_body)
+## Generation Parameters
 
 | Parameter                | Type  | Default | Description                    |
 | ------------------------ | ----- | ------- | ------------------------------ |
@@ -195,7 +236,7 @@ Use `extra_body` to pass generation parameters:
 | `seed`                   | int   | None    | Random seed (reproducible)     |
 | `negative_prompt`        | str   | None    | Negative prompt                |
 | `num_outputs_per_prompt` | int   | 1       | Number of images to generate   |
-| `--cfg-parallel-size`.   | int   | 1       | Number of GPUs for CFG parallelism |
+| `--cfg-parallel-size`    | int   | 1       | Number of GPUs for CFG parallelism |
 
 ## Response Format
 
