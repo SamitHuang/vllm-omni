@@ -1883,10 +1883,10 @@ async def _parse_video_form(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Video generation failed: %s", e)
+        logger.exception("Video generation setup failed: %s", e)
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
-            detail=f"Video generation failed: {str(e)}",
+            detail=f"Video generation setup failed: {str(e)}",
         )
 
     try:
