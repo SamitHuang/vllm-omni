@@ -1798,19 +1798,67 @@ async def _run_video_generation_job(
         raise
 
 
-async def _prepare_video_generation(
+VIDEO_SYNC_TIMEOUT_S = float(os.environ.get("VLLM_OMNI_VIDEO_SYNC_TIMEOUT", "600"))
+
+
+async def _parse_video_form(
     raw_request: Request,
-    request_data: dict[str, Any],
-    input_reference_bytes: bytes | None,
+    prompt: str = Form(...),
+    input_reference: UploadFile | None = File(default=None),
+    image_reference: str | None = Form(default=None),
+    model: str | None = Form(default=None),
+    seconds: SecondStr | None = Form(default=None),
+    size: SizeStr | None = Form(default=None),
+    user: str | None = Form(default=None),
+    width: int | None = Form(default=None),
+    height: int | None = Form(default=None),
+    num_frames: int | None = Form(default=None),
+    fps: int | None = Form(default=None),
+    num_inference_steps: int | None = Form(default=None),
+    guidance_scale: float | None = Form(default=None),
+    guidance_scale_2: float | None = Form(default=None),
+    boundary_ratio: float | None = Form(default=None),
+    flow_shift: float | None = Form(default=None),
+    true_cfg_scale: float | None = Form(default=None),
+    seed: int | None = Form(default=None),
+    negative_prompt: str | None = Form(default=None),
+    lora: str | None = Form(default=None),
 ) -> tuple[VideoGenerationRequest, "OmniOpenAIServingVideo", str, ReferenceImage | None]:
-    """Shared validation, request construction, handler resolution, and image
-    decoding used by both the async and sync video creation endpoints."""
-    if request_data.get("image_reference") is not None and input_reference_bytes is not None:
+    """FastAPI dependency that parses video form data, validates inputs,
+    resolves the handler, and decodes any reference image.
+
+    Used by both ``POST /v1/videos`` (async) and ``POST /v1/videos/sync``.
+    """
+    input_reference_bytes = await input_reference.read() if input_reference is not None else None
+    parsed_image_reference = _parse_form_json(image_reference)
+
+    if parsed_image_reference is not None and input_reference_bytes is not None:
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST.value,
             detail="Provide either input_reference or image_reference, not both.",
         )
 
+    request_data: dict[str, Any] = {
+        "prompt": prompt,
+        "model": model,
+        "seconds": seconds,
+        "size": size,
+        "image_reference": parsed_image_reference,
+        "user": user,
+        "width": width,
+        "height": height,
+        "num_frames": num_frames,
+        "fps": fps,
+        "num_inference_steps": num_inference_steps,
+        "guidance_scale": guidance_scale,
+        "guidance_scale_2": guidance_scale_2,
+        "boundary_ratio": boundary_ratio,
+        "flow_shift": flow_shift,
+        "true_cfg_scale": true_cfg_scale,
+        "seed": seed,
+        "negative_prompt": negative_prompt,
+        "lora": _parse_form_json(lora),
+    }
     request_data = {k: v for k, v in request_data.items() if v is not None}
     request = VideoGenerationRequest(**request_data)
 
@@ -1859,94 +1907,14 @@ async def _prepare_video_generation(
     },
 )
 async def create_video(
-    raw_request: Request,
-    prompt: str = Form(...),
-    input_reference: UploadFile | None = File(default=None),
-    image_reference: str | None = Form(default=None),
-    model: str | None = Form(default=None),
-    seconds: SecondStr | None = Form(default=None),
-    size: SizeStr | None = Form(default=None),
-    user: str | None = Form(default=None),
-    width: int | None = Form(default=None),
-    height: int | None = Form(default=None),
-    num_frames: int | None = Form(default=None),
-    fps: int | None = Form(default=None),
-    num_inference_steps: int | None = Form(default=None),
-    guidance_scale: float | None = Form(default=None),
-    guidance_scale_2: float | None = Form(default=None),
-    boundary_ratio: float | None = Form(default=None),
-    flow_shift: float | None = Form(default=None),
-    true_cfg_scale: float | None = Form(default=None),
-    seed: int | None = Form(default=None),
-    negative_prompt: str | None = Form(default=None),
-    lora: str | None = Form(default=None),
+    ctx: tuple[VideoGenerationRequest, OmniOpenAIServingVideo, str, ReferenceImage | None] = Depends(_parse_video_form),
 ) -> VideoResponse:
     """Create an asynchronous video generation job.
 
-    This OpenAI-style endpoint accepts multipart form-data, validates the
-    request payload, persists a queued job record, and starts generation in the
-    background. The response contains metadata for polling job status rather
-    than the generated video bytes.
-
-    Args:
-        raw_request: Raw FastAPI request for accessing app state.
-        prompt: Text prompt describing the requested video.
-        input_reference: Optional uploaded reference image file.
-        image_reference: Optional JSON-encoded reference image descriptor.
-        model: Optional model name supplied by the client.
-        seconds: Optional target duration string accepted by the video API.
-        size: Optional output size string such as ``1280x720``.
-        user: Optional user identifier forwarded in the stored request.
-        width: Optional explicit output width override.
-        height: Optional explicit output height override.
-        num_frames: Optional explicit frame count override.
-        fps: Optional explicit frame rate override.
-        num_inference_steps: Optional inference step override.
-        guidance_scale: Optional primary guidance scale override.
-        guidance_scale_2: Optional secondary guidance scale override.
-        boundary_ratio: Optional boundary ratio override.
-        flow_shift: Optional flow shift override.
-        true_cfg_scale: Optional true CFG scale override.
-        seed: Optional random seed override.
-        negative_prompt: Optional negative prompt.
-        lora: Optional JSON-encoded per-request LoRA configuration.
-
-    Returns:
-        A queued ``VideoResponse`` that includes the generated job identifier
-        and initial metadata for later retrieval.
-
-    Raises:
-        HTTPException: If the request is invalid, the video handler is
-        unavailable, or job initialization fails.
+    Accepts multipart form-data (see ``_parse_video_form`` for parameters),
+    persists a queued job record, and starts generation in the background.
     """
-    input_reference_bytes = await input_reference.read() if input_reference is not None else None
-    request_data: dict[str, Any] = {
-        "prompt": prompt,
-        "model": model,
-        "seconds": seconds,
-        "size": size,
-        "image_reference": _parse_form_json(image_reference),
-        "user": user,
-        "width": width,
-        "height": height,
-        "num_frames": num_frames,
-        "fps": fps,
-        "num_inference_steps": num_inference_steps,
-        "guidance_scale": guidance_scale,
-        "guidance_scale_2": guidance_scale_2,
-        "boundary_ratio": boundary_ratio,
-        "flow_shift": flow_shift,
-        "true_cfg_scale": true_cfg_scale,
-        "seed": seed,
-        "negative_prompt": negative_prompt,
-        "lora": _parse_form_json(lora),
-    }
-
-    request, handler, effective_model_name, reference_image = await _prepare_video_generation(
-        raw_request,
-        request_data,
-        input_reference_bytes,
-    )
+    request, handler, effective_model_name, reference_image = ctx
     ref = video_response_from_request(effective_model_name, request)
     await VIDEO_STORE.upsert(ref.id, ref)
     task = asyncio.create_task(_run_video_generation_job(handler, request, ref.id, reference_image))
@@ -1964,75 +1932,30 @@ async def create_video(
     },
 )
 async def create_video_sync(
-    raw_request: Request,
-    prompt: str = Form(...),
-    input_reference: UploadFile | None = File(default=None),
-    image_reference: str | None = Form(default=None),
-    model: str | None = Form(default=None),
-    seconds: SecondStr | None = Form(default=None),
-    size: SizeStr | None = Form(default=None),
-    user: str | None = Form(default=None),
-    width: int | None = Form(default=None),
-    height: int | None = Form(default=None),
-    num_frames: int | None = Form(default=None),
-    fps: int | None = Form(default=None),
-    num_inference_steps: int | None = Form(default=None),
-    guidance_scale: float | None = Form(default=None),
-    guidance_scale_2: float | None = Form(default=None),
-    boundary_ratio: float | None = Form(default=None),
-    flow_shift: float | None = Form(default=None),
-    true_cfg_scale: float | None = Form(default=None),
-    seed: int | None = Form(default=None),
-    negative_prompt: str | None = Form(default=None),
-    lora: str | None = Form(default=None),
+    ctx: tuple[VideoGenerationRequest, OmniOpenAIServingVideo, str, ReferenceImage | None] = Depends(_parse_video_form),
 ) -> Response:
     """Synchronous video generation endpoint.
 
-    Unlike ``POST /v1/videos`` which queues a background job and returns
-    immediately, this endpoint blocks until generation completes and returns
-    the raw video bytes directly.  Designed for benchmark and testing
-    scenarios where one-shot request/response latency measurement is needed.
+    Accepts the same form parameters as ``POST /v1/videos`` but blocks until
+    generation completes and returns raw video bytes (``video/mp4``) directly.
+    Designed for benchmark and testing scenarios.
 
-    The response body is the generated video file (``video/mp4``).  Metadata
-    is returned via response headers:
-
-    - ``X-Request-Id``: unique identifier for this generation request.
-    - ``X-Model``: model name used for generation.
-    - ``X-Inference-Time-S``: wall-clock inference time in seconds.
+    Metadata is returned via response headers ``X-Request-Id``,
+    ``X-Model``, and ``X-Inference-Time-S``.
     """
-    input_reference_bytes = await input_reference.read() if input_reference is not None else None
-    request_data: dict[str, Any] = {
-        "prompt": prompt,
-        "model": model,
-        "seconds": seconds,
-        "size": size,
-        "image_reference": _parse_form_json(image_reference),
-        "user": user,
-        "width": width,
-        "height": height,
-        "num_frames": num_frames,
-        "fps": fps,
-        "num_inference_steps": num_inference_steps,
-        "guidance_scale": guidance_scale,
-        "guidance_scale_2": guidance_scale_2,
-        "boundary_ratio": boundary_ratio,
-        "flow_shift": flow_shift,
-        "true_cfg_scale": true_cfg_scale,
-        "seed": seed,
-        "negative_prompt": negative_prompt,
-        "lora": _parse_form_json(lora),
-    }
-
-    request, handler, effective_model_name, reference_image = await _prepare_video_generation(
-        raw_request,
-        request_data,
-        input_reference_bytes,
-    )
-
+    request, handler, effective_model_name, reference_image = ctx
     request_id = f"video_sync_{uuid.uuid4().hex}"
     started_at = time.perf_counter()
     try:
-        gen_response = await handler.generate_videos(request, request_id, reference_image=reference_image)
+        video_bytes = await asyncio.wait_for(
+            handler.generate_video_bytes(request, request_id, reference_image=reference_image),
+            timeout=VIDEO_SYNC_TIMEOUT_S,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=HTTPStatus.GATEWAY_TIMEOUT.value,
+            detail=f"Video generation timed out after {VIDEO_SYNC_TIMEOUT_S}s.",
+        )
     except HTTPException:
         raise
     except Exception as exc:
@@ -2043,13 +1966,6 @@ async def create_video_sync(
         ) from exc
     inference_time_s = time.perf_counter() - started_at
 
-    if not gen_response.data or not gen_response.data[0].b64_json:
-        raise HTTPException(
-            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
-            detail="Video generation completed but returned no outputs.",
-        )
-
-    video_bytes = base64.b64decode(gen_response.data[0].b64_json)
     return Response(
         content=video_bytes,
         media_type="video/mp4",

@@ -645,13 +645,18 @@ def test_video_response_file_extension_is_robust():
 # ---------------------------------------------------------------------------
 
 
+def _mock_encode_video_bytes(mocker: MockerFixture, return_value: bytes = b"fake-video-bytes"):
+    """Mock the raw-bytes encoder used by the sync video path."""
+    return mocker.patch(
+        "vllm_omni.entrypoints.openai.serving_video._encode_video_bytes",
+        return_value=return_value,
+    )
+
+
 def test_sync_t2v_returns_video_bytes(test_client, mocker: MockerFixture):
     """Sync endpoint should block until generation finishes and return raw
     video bytes with metadata headers."""
-    mocker.patch(
-        "vllm_omni.entrypoints.openai.serving_video.encode_video_base64",
-        return_value=base64.b64encode(b"fake-video-bytes").decode(),
-    )
+    _mock_encode_video_bytes(mocker, b"fake-video-bytes")
     response = test_client.post(
         "/v1/videos/sync",
         data={
@@ -674,10 +679,7 @@ def test_sync_i2v_returns_video_bytes(test_client, mocker: MockerFixture):
     """Sync I2V endpoint should accept an uploaded reference image and return
     raw video bytes."""
     image_bytes = _make_test_image_bytes((48, 32))
-    mocker.patch(
-        "vllm_omni.entrypoints.openai.serving_video.encode_video_base64",
-        return_value=base64.b64encode(b"i2v-video-data").decode(),
-    )
+    _mock_encode_video_bytes(mocker, b"i2v-video-data")
     response = test_client.post(
         "/v1/videos/sync",
         data={"prompt": "A bear playing with yarn."},
@@ -691,10 +693,7 @@ def test_sync_i2v_returns_video_bytes(test_client, mocker: MockerFixture):
 
 def test_sync_i2v_with_image_reference(test_client, mocker: MockerFixture):
     """Sync I2V endpoint should accept a JSON image_reference field."""
-    mocker.patch(
-        "vllm_omni.entrypoints.openai.serving_video.encode_video_base64",
-        return_value=base64.b64encode(b"ref-video").decode(),
-    )
+    _mock_encode_video_bytes(mocker, b"ref-video")
     response = test_client.post(
         "/v1/videos/sync",
         data={
@@ -746,7 +745,7 @@ def test_sync_generation_error_returns_500(test_client, mocker: MockerFixture):
     """If the underlying generation raises, the sync endpoint should return 500."""
     mocker.patch.object(
         OmniOpenAIServingVideo,
-        "generate_videos",
+        "generate_video_bytes",
         side_effect=RuntimeError("GPU exploded"),
     )
     response = test_client.post(
@@ -760,25 +759,23 @@ def test_sync_generation_error_returns_500(test_client, mocker: MockerFixture):
 def test_sync_does_not_create_store_entry(test_client, mocker: MockerFixture):
     """The sync endpoint should NOT leave any record in VIDEO_STORE — it is
     stateless by design."""
-    mocker.patch(
-        "vllm_omni.entrypoints.openai.serving_video.encode_video_base64",
-        return_value=base64.b64encode(b"video").decode(),
-    )
+    _mock_encode_video_bytes(mocker)
     response = test_client.post(
         "/v1/videos/sync",
         data={"prompt": "stateless test"},
     )
     assert response.status_code == 200
-    stored = asyncio.run(api_server.VIDEO_STORE.list_values())
+    loop = asyncio.new_event_loop()
+    try:
+        stored = loop.run_until_complete(api_server.VIDEO_STORE.list_values())
+    finally:
+        loop.close()
     assert len(stored) == 0
 
 
 def test_sync_sampling_params_pass_through(test_client, mocker: MockerFixture):
     """Sampling parameters should propagate to the engine through the sync path."""
-    mocker.patch(
-        "vllm_omni.entrypoints.openai.serving_video.encode_video_base64",
-        return_value=base64.b64encode(b"video").decode(),
-    )
+    _mock_encode_video_bytes(mocker)
     response = test_client.post(
         "/v1/videos/sync",
         data={
