@@ -73,114 +73,32 @@ The default yaml configuration deploys AR on GPU 0 and DiT on GPU 1. You can use
 
 ### Text-to-Image
 
-Generate images from text prompts:
-
-**Using Python client**
-
 ```bash
 python openai_chat_client.py \
     --prompt "A photorealistic mountain landscape at sunset" \
     --height 1024 \
     --width 1024 \
     --output landscape.png
-```
 
-**Using curl**
-
-```bash
-curl -s http://localhost:8091/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "messages": [
-      {"role": "user", "content": "A beautiful sunset over the ocean with sailing boats"}
-    ],
-    "extra_body": {
-      "height": 1024,
-      "width": 1024,
-      "num_inference_steps": 50,
-      "guidance_scale": 1.5,
-      "seed": 42
-    }
-  }' | jq -r '.choices[0].message.content[0].image_url.url' | cut -d',' -f2- | base64 -d > output.png
-```
-
-**Using OpenAI SDK**
-
-```python
-from openai import OpenAI
-import base64
-
-client = OpenAI(base_url="http://localhost:8091/v1", api_key="none")
-
-response = client.chat.completions.create(
-    model="zai-org/GLM-Image",
-    messages=[{"role": "user", "content": "A beautiful sunset over the ocean"}],
-    extra_body={
-        "height": 1024,
-        "width": 1024,
-        "num_inference_steps": 50,
-        "guidance_scale": 1.5,
-        "seed": 42,
-    },
-)
-
-img_url = response.choices[0].message.content[0].image_url.url
-_, b64_data = img_url.split(",", 1)
-with open("output.png", "wb") as f:
-    f.write(base64.b64decode(b64_data))
-```
-
-Or use the script:
-
-```bash
+# Or use the curl script:
 bash run_curl_text_to_image.sh "A futuristic city skyline at night"
 ```
 
 ### Image-to-Image (Image Editing)
-
-Edit images with text instructions:
-
-**Using Python client**
 
 ```bash
 python openai_chat_client.py \
     --prompt "Convert this image to watercolor style" \
     --image input.png \
     --output watercolor.png
-```
 
-**Using curl**
-
-```bash
-IMG_B64=$(base64 < input.png | tr -d '\n')
-
-curl -s http://localhost:8091/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d @- <<EOF | jq -r '.choices[0].message.content[0].image_url.url' | cut -d',' -f2- | base64 -d > output.png
-{
-  "messages": [{
-    "role": "user",
-    "content": [
-      {"type": "text", "text": "Convert this image to watercolor style"},
-      {"type": "image_url", "image_url": {"url": "data:image/png;base64,'$IMG_B64'"}}
-    ]
-  }],
-  "extra_body": {
-    "height": 1024,
-    "width": 1024,
-    "num_inference_steps": 50,
-    "guidance_scale": 1.5,
-    "seed": 42
-  }
-}
-EOF
-```
-
-Or use the script:
-
-```bash
+# Or use the curl script:
 bash run_curl_image_edit.sh input.png "Convert to watercolor style"
 ```
+
+For general-purpose request methods (curl, OpenAI SDK, Python `requests`), see
+the [Text-to-Image](text_to_image.md) and [Image-to-Image](image_to_image.md)
+guides.
 
 ## Generation Parameters
 
