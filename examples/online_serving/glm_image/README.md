@@ -127,9 +127,11 @@ with open("output.png", "wb") as f:
     f.write(base64.b64decode(b64_data))
 ```
 
-> **Note:** The OpenAI SDK's `extra_body` keyword merges parameters into the top-level
-> request body. This is different from placing a literal `"extra_body"` key in the JSON
-> (as shown in the curl example), but both formats are supported by the server.
+!!! note
+    The OpenAI SDK's `extra_body` keyword argument merges parameters into the
+    top-level request body automatically. When using curl or Python `requests`,
+    wrap generation parameters inside a literal `"extra_body"` key in the JSON
+    instead (as shown in the curl example above).
 
 Or use the script:
 

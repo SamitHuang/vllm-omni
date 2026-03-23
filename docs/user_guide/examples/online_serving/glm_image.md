@@ -184,7 +184,8 @@ bash run_curl_image_edit.sh input.png "Convert to watercolor style"
 
 ## Generation Parameters
 
-These can be passed as top-level fields in curl/requests, or via `extra_body` in the OpenAI SDK.
+These can be passed inside `extra_body` in the curl JSON, or via the
+`extra_body` keyword argument when using the OpenAI Python SDK.
 See the [Diffusion Chat API guide](../../../../serving/diffusion_chat_api.md) for details.
 
 | Parameter             | Type  | Default | Description                         |

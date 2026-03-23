@@ -9,29 +9,17 @@ to diffusion models through this endpoint across different client libraries.
     [`/v1/images/generations`](image_generation_api.md) endpoint accepts these
     parameters as top-level fields and may be simpler for your use case.
 
-## API Endpoints Overview
-
-vLLM-Omni provides multiple endpoints for diffusion models. Each has its own parameter-passing
-convention:
-
-| Endpoint | Use Case | Parameter Format |
-|----------|----------|-----------------|
-| `/v1/chat/completions` | Image gen/edit via chat | Generation params in `extra_body` (see below) |
-| `/v1/images/generations` | Dedicated text-to-image | Top-level JSON fields |
-| `/v1/images/edits` | Dedicated image editing | Multipart form fields |
-| `/v1/videos` | Video generation | Multipart form fields |
-
-## Passing Generation Parameters via `/v1/chat/completions`
+## Passing Generation Parameters
 
 The `/v1/chat/completions` endpoint follows the OpenAI Chat API schema, which does not natively
 include diffusion-specific fields like `num_inference_steps` or `height`. vLLM-Omni accepts
 these as **extra fields** on the request body.
 
-There are two supported methods depending on your client:
+How you pass these fields depends on your client:
 
-### Method 1: Using curl or Python `requests`
+### Using curl or Python `requests`
 
-Put generation parameters as **top-level fields** in the JSON body alongside `messages`:
+Wrap generation parameters inside an `"extra_body"` key in the JSON body:
 
 === "curl"
 
@@ -42,11 +30,13 @@ Put generation parameters as **top-level fields** in the JSON body alongside `me
         "messages": [
           {"role": "user", "content": "A beautiful landscape painting"}
         ],
-        "height": 1024,
-        "width": 1024,
-        "num_inference_steps": 50,
-        "true_cfg_scale": 4.0,
-        "seed": 42
+        "extra_body": {
+          "height": 1024,
+          "width": 1024,
+          "num_inference_steps": 50,
+          "true_cfg_scale": 4.0,
+          "seed": 42
+        }
       }' | jq -r '.choices[0].message.content[0].image_url.url' \
          | cut -d',' -f2- | base64 -d > output.png
     ```
@@ -61,11 +51,13 @@ Put generation parameters as **top-level fields** in the JSON body alongside `me
         "messages": [
             {"role": "user", "content": "A beautiful landscape painting"}
         ],
-        "height": 1024,
-        "width": 1024,
-        "num_inference_steps": 50,
-        "true_cfg_scale": 4.0,
-        "seed": 42,
+        "extra_body": {
+            "height": 1024,
+            "width": 1024,
+            "num_inference_steps": 50,
+            "true_cfg_scale": 4.0,
+            "seed": 42,
+        },
     }
 
     resp = requests.post(
@@ -81,7 +73,7 @@ Put generation parameters as **top-level fields** in the JSON body alongside `me
         f.write(base64.b64decode(b64_data))
     ```
 
-### Method 2: Using the OpenAI Python SDK
+### Using the OpenAI Python SDK
 
 The OpenAI Python SDK uses the `extra_body` keyword argument to pass non-standard fields.
 The SDK automatically merges these into the top-level request body:
@@ -112,23 +104,11 @@ with open("output.png", "wb") as f:
     f.write(base64.b64decode(b64_data))
 ```
 
-### Legacy Format: Nested `extra_body` in JSON
-
-You may see examples that nest generation parameters inside an `"extra_body"` key in the
-JSON body. This format is still supported for backward compatibility:
-
-```json
-{
-  "messages": [{"role": "user", "content": "A beautiful landscape painting"}],
-  "extra_body": {
-    "height": 1024,
-    "width": 1024,
-    "num_inference_steps": 50
-  }
-}
-```
-
-Both formats (top-level fields and nested `extra_body`) are accepted.
+!!! note "SDK `extra_body` vs. JSON `extra_body`"
+    The OpenAI SDK's `extra_body` keyword argument and the literal `"extra_body"` key in
+    curl/requests JSON serve the same purpose but work differently under the hood.
+    The SDK flattens `extra_body` fields into the top-level request body, while the JSON
+    approach nests them. Both are handled correctly by the server.
 
 !!! note "About the `ignored fields` warning"
     When sending non-standard fields, you may see a log message like:
@@ -160,9 +140,11 @@ For image editing, include both text and image in the message content:
             {"type": "image_url", "image_url": {"url": "data:image/png;base64,'"$IMG_B64"'"}}
           ]
         }],
-        "num_inference_steps": 50,
-        "guidance_scale": 1,
-        "seed": 42
+        "extra_body": {
+          "num_inference_steps": 50,
+          "guidance_scale": 1,
+          "seed": 42
+        }
       }' | jq -r '.choices[0].message.content[0].image_url.url' \
          | cut -d',' -f2 | base64 -d > output.png
     ```
@@ -218,8 +200,6 @@ diffusion models:
 | `seed` | int | Random seed for reproducibility |
 | `negative_prompt` | str | Text describing what to avoid |
 | `num_outputs_per_prompt` | int | Number of images to generate (default: 1) |
-| `num_frames` | int | Number of frames (video models) |
-| `guidance_scale_2` | float | Secondary guidance scale (Wan2.2 models) |
 | `layers` | int | Number of layers to generate (Qwen-Image-Layered, default: 4) |
 | `resolution` | int | Resolution for dimension calculation (Qwen-Image-Layered, 640 or 1024) |
 | `lora` | object | Per-request LoRA adapter configuration |

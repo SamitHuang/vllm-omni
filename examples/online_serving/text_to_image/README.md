@@ -72,9 +72,10 @@ with open("output.png", "wb") as f:
 ```
 
 !!! note
-    The OpenAI SDK's `extra_body` keyword merges parameters into the top-level
-    request body. This is different from placing a literal `"extra_body"` key in the JSON
-    (as shown in the curl example), but both formats are supported by the server.
+    The OpenAI SDK's `extra_body` keyword argument merges parameters into the
+    top-level request body automatically. When using curl or Python `requests`,
+    wrap generation parameters inside a literal `"extra_body"` key in the JSON
+    instead (as shown in the curl example above).
 
 ### Method 3: Using Python Client Script
 
@@ -203,7 +204,6 @@ These parameters can be passed inside `extra_body` in the curl JSON, or via the
 | `seed`                   | int   | None    | Random seed (reproducible)     |
 | `negative_prompt`        | str   | None    | Negative prompt                |
 | `num_outputs_per_prompt` | int   | 1       | Number of images to generate   |
-| `--cfg-parallel-size`    | int   | 1       | Number of GPUs for CFG parallelism |
 
 ## Response Format
 

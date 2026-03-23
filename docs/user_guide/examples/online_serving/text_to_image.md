@@ -236,7 +236,6 @@ Wrap generation parameters inside `extra_body` in the request JSON:
 | `seed`                   | int   | None    | Random seed (reproducible)     |
 | `negative_prompt`        | str   | None    | Negative prompt                |
 | `num_outputs_per_prompt` | int   | 1       | Number of images to generate   |
-| `--cfg-parallel-size`    | int   | 1       | Number of GPUs for CFG parallelism |
 
 ## Response Format
 
