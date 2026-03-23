@@ -81,6 +81,7 @@ from vllm.entrypoints.utils import (
 from vllm.logger import init_logger
 from vllm.tasks import POOLING_TASKS
 from vllm.tool_parsers import ToolParserManager
+from vllm.utils import random_uuid
 from vllm.utils.system_utils import decorate_logs
 
 from vllm_omni.entrypoints.async_omni import AsyncOmni
@@ -1944,7 +1945,7 @@ async def create_video_sync(
     ``X-Model``, and ``X-Inference-Time-S``.
     """
     request, handler, effective_model_name, reference_image = ctx
-    request_id = f"video_sync_{uuid.uuid4().hex}"
+    request_id = f"video_sync-{random_uuid()}"
     started_at = time.perf_counter()
     try:
         video_bytes = await asyncio.wait_for(

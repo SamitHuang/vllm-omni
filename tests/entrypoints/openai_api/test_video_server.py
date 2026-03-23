@@ -670,7 +670,7 @@ def test_sync_t2v_returns_video_bytes(test_client, mocker: MockerFixture):
     assert response.status_code == 200
     assert response.headers["content-type"] == "video/mp4"
     assert response.content == b"fake-video-bytes"
-    assert response.headers["x-request-id"].startswith("video_sync_")
+    assert response.headers["x-request-id"].startswith("video_sync-")
     assert response.headers["x-model"] == "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
     assert float(response.headers["x-inference-time-s"]) >= 0
 
