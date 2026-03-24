@@ -226,6 +226,12 @@ Wrap generation parameters inside `extra_body` in the request JSON:
 
 ## Generation Parameters
 
+When using `/v1/chat/completions`, pass these inside `extra_body` in the curl
+JSON, or via the `extra_body` keyword argument in the OpenAI Python SDK (see the
+[Diffusion Chat API guide](../../../../serving/diffusion_chat_api.md)).
+When using the dedicated [`/v1/images/generations`](../../../../serving/image_generation_api.md)
+endpoint, pass them as top-level JSON fields directly.
+
 | Parameter                | Type  | Default | Description                    |
 | ------------------------ | ----- | ------- | ------------------------------ |
 | `height`                 | int   | None    | Image height in pixels         |

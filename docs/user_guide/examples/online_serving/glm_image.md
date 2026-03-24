@@ -102,9 +102,12 @@ guides.
 
 ## Generation Parameters
 
-These can be passed inside `extra_body` in the curl JSON, or via the
-`extra_body` keyword argument when using the OpenAI Python SDK.
-See the [Diffusion Chat API guide](../../../../serving/diffusion_chat_api.md) for details.
+When using `/v1/chat/completions`, pass these inside `extra_body` in the curl
+JSON, or via the `extra_body` keyword argument in the OpenAI Python SDK (see the
+[Diffusion Chat API guide](../../../../serving/diffusion_chat_api.md)).
+When using the dedicated [`/v1/images/generations`](../../../../serving/image_generation_api.md)
+or [`/v1/images/edits`](../../../../serving/image_edit_api.md) endpoints, pass
+them as top-level fields directly.
 
 | Parameter             | Type  | Default | Description                         |
 | --------------------- | ----- | ------- | ----------------------------------- |

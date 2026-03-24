@@ -99,8 +99,10 @@ the [Text-to-Image](../text_to_image/README.md) and
 
 ## Generation Parameters
 
-These parameters can be passed inside `extra_body` in the curl JSON, or via the
-`extra_body` keyword argument when using the OpenAI Python SDK.
+When using `/v1/chat/completions`, pass these inside `extra_body` in the curl
+JSON, or via the `extra_body` keyword argument in the OpenAI Python SDK.
+When using the dedicated `/v1/images/generations` or `/v1/images/edits`
+endpoints, pass them as top-level fields directly.
 
 | Parameter             | Type  | Default | Description                         |
 | --------------------- | ----- | ------- | ----------------------------------- |

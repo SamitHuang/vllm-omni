@@ -297,8 +297,10 @@ Provide multiple images in `content` (order matters):
 
 ## Generation Parameters
 
-These parameters can be passed inside `extra_body` in the curl JSON, or via the
-`extra_body` keyword argument when using the OpenAI Python SDK.
+When using `/v1/chat/completions`, pass these inside `extra_body` in the curl
+JSON, or via the `extra_body` keyword argument in the OpenAI Python SDK.
+When using the dedicated `/v1/images/edits` endpoint, pass them as top-level
+form fields directly.
 
 | Parameter                | Type  | Default | Description                           |
 | ------------------------ | ----- | ------- | ------------------------------------- |

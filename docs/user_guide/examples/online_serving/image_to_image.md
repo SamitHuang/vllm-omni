@@ -350,6 +350,12 @@ Provide multiple images in `content` (order matters):
 
 ## Generation Parameters
 
+When using `/v1/chat/completions`, pass these inside `extra_body` in the curl
+JSON, or via the `extra_body` keyword argument in the OpenAI Python SDK (see the
+[Diffusion Chat API guide](../../../../serving/diffusion_chat_api.md)).
+When using the dedicated [`/v1/images/edits`](../../../../serving/image_edit_api.md)
+endpoint, pass them as top-level form fields directly.
+
 | Parameter                | Type  | Default | Description                           |
 | ------------------------ | ----- | ------- | ------------------------------------- |
 | `height`                 | int   | None    | Output image height in pixels         |
