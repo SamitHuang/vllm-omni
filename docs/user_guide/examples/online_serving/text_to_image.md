@@ -44,7 +44,7 @@ vllm serve Qwen/Qwen-Image --omni --port 8091 --ring 2
 vllm serve Qwen/Qwen-Image --omni --port 8091 --usp 2 --ring 2
 ```
 
-For more details on parallelism acceleration, see the [Parallelism Acceleration Guide](../../diffusion/parallelism_acceleration.md).
+For more details on parallelism acceleration, see the [Parallelism Acceleration Guide](https://github.com/vllm-project/vllm-omni/tree/main/examples/diffusion/parallelism_acceleration.md).
 
 ## API Calls
 
@@ -146,12 +146,12 @@ curl -X POST http://localhost:8091/v1/images/generations \
 
 ### LoRA Parameters
 
-| Parameter     | Type   | Description                                                      |
-| ------------- | ------ | ---------------------------------------------------------------- |
-| `name`        | str    | LoRA adapter name (optional, defaults to path stem)              |
-| `local_path`  | str    | Server-local path to LoRA adapter folder (PEFT format, required) |
-| `scale`       | float  | LoRA scale factor (default: 1.0)                                 |
-| `int_id`     | int    | LoRA integer ID for caching (optional, derived from path if not provided) |
+| Parameter    | Type  | Description                                                               |
+| ------------ | ----- | ------------------------------------------------------------------------- |
+| `name`       | str   | LoRA adapter name (optional, defaults to path stem)                       |
+| `local_path` | str   | Server-local path to LoRA adapter folder (PEFT format, required)          |
+| `scale`      | float | LoRA scale factor (default: 1.0)                                          |
+| `int_id`     | int   | LoRA integer ID for caching (optional, derived from path if not provided) |
 
 ### LoRA Adapter Format
 
