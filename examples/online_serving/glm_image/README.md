@@ -102,7 +102,9 @@ the [Text-to-Image](../text_to_image/README.md) and
 When using `/v1/chat/completions`, pass these inside `extra_body` in the curl
 JSON, or via the `extra_body` keyword argument in the OpenAI Python SDK.
 When using the dedicated `/v1/images/generations` or `/v1/images/edits`
-endpoints, pass them as top-level fields directly.
+endpoints, pass the supported generation controls as top-level fields directly.
+For image dimensions and count, use `size` and `n` rather than `height` or
+`width`.
 
 | Parameter             | Type  | Default | Description                         |
 | --------------------- | ----- | ------- | ----------------------------------- |
@@ -110,7 +112,7 @@ endpoints, pass them as top-level fields directly.
 | `width`               | int   | 1024    | Image width in pixels               |
 | `num_inference_steps` | int   | 50      | Number of diffusion denoising steps |
 | `guidance_scale`      | float | 1.5     | Classifier-free guidance scale      |
-| `seed`                | int   | 42      | Random seed for reproducibility     |
+| `seed`                | int   | None    | Optional random seed; `/v1/images/*` generates one server-side if omitted |
 | `negative_prompt`     | str   | None    | Negative prompt                     |
 
 ## Response Format

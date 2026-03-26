@@ -216,8 +216,10 @@ Use `extra_body` to pass generation parameters:
 
 When using `/v1/chat/completions`, pass these inside `extra_body` in the curl
 JSON, or via the `extra_body` keyword argument in the OpenAI Python SDK.
-When using the dedicated `/v1/images/generations` endpoint, pass them as
-top-level JSON fields directly.
+When using the dedicated `/v1/images/generations` endpoint, pass the supported
+generation controls as top-level JSON fields directly. For image dimensions and
+count, use `size` and `n` rather than `height`, `width`, or
+`num_outputs_per_prompt`.
 
 | Parameter                | Type  | Default | Description                    |
 | ------------------------ | ----- | ------- | ------------------------------ |

@@ -354,7 +354,9 @@ When using `/v1/chat/completions`, pass these inside `extra_body` in the curl
 JSON, or via the `extra_body` keyword argument in the OpenAI Python SDK (see the
 [Diffusion Chat API guide](../../../../serving/diffusion_chat_api.md)).
 When using the dedicated [`/v1/images/edits`](../../../../serving/image_edit_api.md)
-endpoint, pass them as top-level form fields directly.
+endpoint, pass the supported generation controls as top-level form fields
+directly. For image dimensions and count, use `size` and `n` rather than
+`height`, `width`, or `num_outputs_per_prompt`.
 
 | Parameter                | Type  | Default | Description                           |
 | ------------------------ | ----- | ------- | ------------------------------------- |
@@ -362,7 +364,7 @@ endpoint, pass them as top-level form fields directly.
 | `width`                  | int   | None    | Output image width in pixels          |
 | `size`                   | str   | None    | Output image size (e.g., "1024x1024") |
 | `num_inference_steps`    | int   | 50      | Number of denoising steps             |
-| `guidance_scale`         | float | 7.5     | CFG guidance scale                    |
+| `guidance_scale`         | float | 1.0     | CFG guidance scale                    |
 | `seed`                   | int   | None    | Random seed (reproducible)            |
 | `negative_prompt`        | str   | None    | Negative prompt                       |
 | `num_outputs_per_prompt` | int   | 1       | Number of images to generate          |
