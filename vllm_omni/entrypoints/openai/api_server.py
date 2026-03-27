@@ -1938,7 +1938,7 @@ async def _run_video_generation_job(
         raise
 
 
-VIDEO_SYNC_TIMEOUT_S = float(os.environ.get("VLLM_OMNI_VIDEO_SYNC_TIMEOUT", "600"))
+VIDEO_SYNC_TIMEOUT_S = 600.0
 
 
 async def _parse_video_form(
