@@ -77,6 +77,7 @@ curl -X POST http://localhost:8091/v1/videos/sync \
 ## Storage
 
 Generated video files are stored on local disk by the async video API.
+Local file storage behavior can be controlled via the following environment variables:
 
 - `VLLM_OMNI_STORAGE_PATH`: directory used for generated files (default: `/tmp/storage`)
 - `VLLM_OMNI_STORAGE_MAX_CONCURRENCY`: max concurrent save/delete operations (default: `4`)
@@ -178,7 +179,7 @@ curl -X POST http://localhost:8091/v1/videos \
 
 ## Create Response Format
 
-`POST /v1/videos` returns a job record.
+`POST /v1/videos` returns a job record, not inline base64 video data.
 
 ```json
 {
@@ -235,6 +236,10 @@ done
 
 ## Example materials
 
+??? abstract "run_curl_hunyuan_video_15.sh"
+    ``````sh
+    --8<-- "examples/online_serving/text_to_video/run_curl_hunyuan_video_15.sh"
+    ``````
 ??? abstract "run_curl_text_to_video.sh"
     ``````sh
     --8<-- "examples/online_serving/text_to_video/run_curl_text_to_video.sh"
@@ -242,4 +247,8 @@ done
 ??? abstract "run_server.sh"
     ``````sh
     --8<-- "examples/online_serving/text_to_video/run_server.sh"
+    ``````
+??? abstract "run_server_hunyuan_video_15.sh"
+    ``````sh
+    --8<-- "examples/online_serving/text_to_video/run_server_hunyuan_video_15.sh"
     ``````
