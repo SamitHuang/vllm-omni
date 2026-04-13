@@ -145,23 +145,24 @@ def test_async_video_generation_bypasses_base64(test_client, mocker: MockerFixtu
         "vllm_omni.entrypoints.openai.serving_video._encode_video_bytes",
         return_value=b"raw-mp4-bytes",
     )
-    
+
     # We assert that encode_video_base64 is never called
     mock_base64 = mocker.patch(
         "vllm_omni.entrypoints.openai.serving_video.encode_video_base64",
         side_effect=RuntimeError("Regression: async video path should not base64 encode"),
     )
-    
+
     response = test_client.post(
         "/v1/videos",
         data={"prompt": "A base64 test."},
     )
     assert response.status_code == 200
     video_id = response.json()["id"]
-    
+
     # Wait for completion. If it used base64, the RuntimeError would fail the task
     _wait_for_status(test_client, video_id, VideoGenerationStatus.COMPLETED.value)
     mock_base64.assert_not_called()
+
 
 def test_t2v_video_generation_form(test_client, mocker: MockerFixture):
     fps_values = []
