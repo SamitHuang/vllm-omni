@@ -164,6 +164,45 @@ def test_async_video_generation_bypasses_base64(test_client, mocker: MockerFixtu
     mock_base64.assert_not_called()
 
 
+def test_async_video_generation_with_audio_bypasses_base64(test_client, mocker: MockerFixture):
+    """Regression test: Ensure async video generation passes audio through
+    generate_video_bytes without bouncing through base64 encoding."""
+    mock_encode = mocker.patch(
+        "vllm_omni.entrypoints.openai.serving_video._encode_video_bytes",
+        return_value=b"raw-mp4-bytes",
+    )
+
+    mock_base64 = mocker.patch(
+        "vllm_omni.entrypoints.openai.serving_video.encode_video_base64",
+        side_effect=RuntimeError("Regression: async video path should not base64 encode"),
+    )
+
+    engine = test_client.app.state.openai_serving_video._engine_client
+
+    async def _generate(prompt, request_id, sampling_params_list):
+        engine.captured_prompt = prompt
+        engine.captured_sampling_params_list = sampling_params_list
+        yield MockVideoResult([object()], audios=[object()], sample_rate=48000)
+
+    engine.generate = _generate
+
+    response = test_client.post(
+        "/v1/videos",
+        data={"prompt": "A base64 test with audio."},
+    )
+    assert response.status_code == 200
+    video_id = response.json()["id"]
+
+    _wait_for_status(test_client, video_id, VideoGenerationStatus.COMPLETED.value)
+    mock_base64.assert_not_called()
+
+    mock_encode.assert_called_once()
+    kwargs = mock_encode.call_args.kwargs
+    assert "audio" in kwargs
+    assert kwargs["audio"] is not None
+    assert kwargs["audio_sample_rate"] == 48000
+
+
 def test_t2v_video_generation_form(test_client, mocker: MockerFixture):
     fps_values = []
 
