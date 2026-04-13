@@ -71,7 +71,6 @@ from vllm_omni.engine.stage_init_utils import (
     finalize_initialized_stages,
     get_stage_connector_spec,
     initialize_diffusion_stage,
-    initialize_inline_diffusion_stage,
     inject_kv_stage_info,
     load_omni_transfer_config_for_model,
     prepare_engine_environment,
@@ -759,21 +758,15 @@ class AsyncOmniEngine:
                                         self._omni_master_server,
                                     )
                                 else:
-                                    if self.num_stages == 1:
-                                        stage_clients[stage_idx] = initialize_inline_diffusion_stage(
-                                            self.model,
-                                            stage_cfg,
-                                            metadata,
-                                            batch_size=self.diffusion_batch_size,
-                                        )
-                                    else:
-                                        stage_clients[stage_idx] = initialize_diffusion_stage(
-                                            self.model,
-                                            stage_cfg,
-                                            metadata,
-                                            stage_init_timeout=stage_init_timeout,
-                                            batch_size=self.diffusion_batch_size,
-                                        )
+                                    use_inline = True if self.num_stages == 1 else False
+                                    stage_clients[stage_idx] = initialize_diffusion_stage(
+                                        self.model,
+                                        stage_cfg,
+                                        metadata,
+                                        stage_init_timeout=stage_init_timeout,
+                                        batch_size=self.diffusion_batch_size,
+                                        use_inline=use_inline,
+                                    )
                                 logger.info(
                                     "[AsyncOmniEngine] Stage %s initialized (diffusion, batch_size=%d)",
                                     configured_stage_id,
