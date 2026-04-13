@@ -524,6 +524,26 @@ def build_diffusion_config(
     return od_config
 
 
+def initialize_inline_diffusion_stage(
+    model: str,
+    stage_cfg: Any,
+    metadata: StageMetadata,
+    batch_size: int = 1,
+) -> Any:
+    """Build an inline diffusion stage client.
+
+    Args:
+        model: Model name or path.
+        stage_cfg: Stage configuration.
+        metadata: Extracted stage metadata.
+        batch_size: Maximum number of requests to batch together.
+    """
+    from vllm_omni.diffusion.inline_stage_diffusion_client import InlineStageDiffusionClient
+
+    od_config = build_diffusion_config(model, stage_cfg, metadata)
+    return InlineStageDiffusionClient(model, od_config, metadata, batch_size=batch_size)
+
+
 def initialize_diffusion_stage(
     model: str,
     stage_cfg: Any,
