@@ -69,7 +69,7 @@ class BlockingVideoHandler:
         if self.stage_configs is None:
             self.stage_configs = stage_configs
 
-    async def generate_videos(self, request, reference_id, *, reference_image=None):
+    async def generate_video_bytes(self, request, reference_id, *, reference_image=None):
         self.started.set()
         try:
             await asyncio.Future()
@@ -403,10 +403,10 @@ def test_sampling_params_pass_through(test_client, mocker: MockerFixture):
 def test_audio_sample_rate_comes_from_model_config(test_client, mocker: MockerFixture):
     audio_sample_rates = []
 
-    def _fake_encode(video, fps, audio=None, audio_sample_rate=None):
-        del video, fps, audio
+    def _fake_encode(video, fps, audio=None, audio_sample_rate=None, video_codec_options=None):
+        del video, fps, audio, video_codec_options
         audio_sample_rates.append(audio_sample_rate)
-        return "Zg=="
+        return b"fake-video"
 
     engine = test_client.app.state.openai_serving_video._engine_client
     engine.model_config = SimpleNamespace(
@@ -420,12 +420,14 @@ def test_audio_sample_rate_comes_from_model_config(test_client, mocker: MockerFi
     async def _generate(prompt, request_id, sampling_params_list):
         engine.captured_prompt = prompt
         engine.captured_sampling_params_list = sampling_params_list
-        yield MockVideoResult([object()], audios=[object()])
+        import numpy as np
+
+        yield MockVideoResult([np.zeros((1, 64, 64, 3), dtype=np.uint8)], audios=[object()])
 
     engine.generate = _generate
 
     mocker.patch(
-        "vllm_omni.entrypoints.openai.serving_video.encode_video_base64",
+        "vllm_omni.entrypoints.openai.serving_video._encode_video_bytes",
         side_effect=_fake_encode,
     )
     response = test_client.post(
