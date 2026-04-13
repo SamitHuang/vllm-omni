@@ -213,7 +213,13 @@ def _encode_video_bytes(video: Any, fps: int, audio: Any | None = None, audio_sa
     frames_np = np.stack(frames, axis=0)
     if frames_np.ndim == 4 and frames_np.shape[-1] == 4:
         frames_np = frames_np[..., :3]
-    frames_u8 = (np.clip(frames_np, 0.0, 1.0) * 255).round().clip(0, 255).astype(np.uint8)
+
+    if frames_np.dtype == np.uint8:
+        frames_u8 = frames_np
+    else:
+        frames_np = np.clip(frames_np, 0.0, 1.0)
+        frames_np *= 255.0
+        frames_u8 = np.round(frames_np).astype(np.uint8)
 
     audio_np = _coerce_audio_to_numpy(audio) if audio is not None else None
 

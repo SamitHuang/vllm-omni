@@ -42,7 +42,7 @@ def mux_video_audio_bytes(
     v_stream.width = video_frames.shape[2]
     v_stream.height = video_frames.shape[1]
     v_stream.pix_fmt = "yuv420p"
-    v_stream.options = {"crf": crf}
+    v_stream.options = {"crf": str(crf), "preset": "ultrafast", "threads": "0"}
 
     a_stream = None
     if audio_waveform is not None:
