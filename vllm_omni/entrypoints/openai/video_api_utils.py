@@ -228,6 +228,7 @@ def _encode_video_bytes(video: Any, fps: int, audio: Any | None = None, audio_sa
         audio_np,
         fps=float(fps),
         audio_sample_rate=audio_sample_rate or 24000,
+        video_codec_options={"preset": "ultrafast", "threads": "0"},
     )
 
 
