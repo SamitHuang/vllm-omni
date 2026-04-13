@@ -39,8 +39,6 @@ if TYPE_CHECKING:
 
 logger = init_logger(__name__)
 
-_HANDSHAKE_POLL_TIMEOUT_S = 600
-
 
 class StageDiffusionProc:
     """Subprocess entry point for diffusion inference.
@@ -130,6 +128,7 @@ class StageDiffusionProc:
         request_id: str,
         prompt: Any,
         sampling_params_dict: dict,
+        kv_sender_info: dict[str, Any] | None = None,
     ) -> OmniRequestOutput:
         """Build a diffusion request and run DiffusionEngine.step()."""
         sampling_params = self._reconstruct_sampling_params(sampling_params_dict)
@@ -138,6 +137,8 @@ class StageDiffusionProc:
             prompts=[prompt],
             sampling_params=sampling_params,
             request_ids=[request_id],
+            request_id=request_id,
+            kv_sender_info=kv_sender_info,
         )
 
         loop = asyncio.get_running_loop()
@@ -152,6 +153,7 @@ class StageDiffusionProc:
         request_id: str,
         prompts: list[Any],
         sampling_params_dict: dict,
+        kv_sender_info: dict[str, Any] | None = None,
     ) -> OmniRequestOutput:
         """Build a batched diffusion request and run DiffusionEngine.step().
 
@@ -165,7 +167,9 @@ class StageDiffusionProc:
         request = OmniDiffusionRequest(
             prompts=prompts,
             sampling_params=sampling_params,
-            request_ids=[request_id] * len(prompts),
+            request_ids=[f"{request_id}-{i}" for i in range(len(prompts))],
+            request_id=request_id,
+            kv_sender_info=kv_sender_info,
         )
 
         loop = asyncio.get_running_loop()
@@ -346,10 +350,20 @@ class StageDiffusionProc:
 
         tasks: dict[str, asyncio.Task] = {}
 
-        async def _dispatch_request(request_id: str, prompt: Any, sampling_params_dict: dict) -> None:
+        async def _dispatch_request(
+            request_id: str,
+            prompt: Any,
+            sampling_params_dict: dict,
+            kv_sender_info: dict[str, Any] | None = None,
+        ) -> None:
             """Process a single diffusion request and send the response."""
             try:
-                result = await self._process_request(request_id, prompt, sampling_params_dict)
+                result = await self._process_request(
+                    request_id,
+                    prompt,
+                    sampling_params_dict,
+                    kv_sender_info=kv_sender_info,
+                )
                 await response_socket.send(encoder.encode({"type": "result", "output": result}))
             except DiffusionRequestAbortedError as e:
                 logger.info(
@@ -384,6 +398,7 @@ class StageDiffusionProc:
                             request_id,
                             msg["prompt"],
                             msg["sampling_params"],
+                            msg.get("kv_sender_info"),
                         )
                     )
                     tasks[request_id] = task
@@ -391,9 +406,19 @@ class StageDiffusionProc:
                 elif msg_type == "add_batch_request":
                     request_id = msg["request_id"]
 
-                    async def _dispatch_batch(rid: str, prompts: list, sp_dict: dict) -> None:
+                    async def _dispatch_batch(
+                        rid: str,
+                        prompts: list,
+                        sp_dict: dict,
+                        kv_sender_info: dict[str, Any] | None = None,
+                    ) -> None:
                         try:
-                            result = await self._process_batch_request(rid, prompts, sp_dict)
+                            result = await self._process_batch_request(
+                                rid,
+                                prompts,
+                                sp_dict,
+                                kv_sender_info=kv_sender_info,
+                            )
                             await response_socket.send(encoder.encode({"type": "result", "output": result}))
                         except DiffusionRequestAbortedError as e:
                             logger.info(
@@ -420,6 +445,7 @@ class StageDiffusionProc:
                             request_id,
                             msg["prompts"],
                             msg["sampling_params"],
+                            msg.get("kv_sender_info"),
                         )
                     )
                     tasks[request_id] = task
@@ -552,14 +578,17 @@ class StageDiffusionProc:
 def spawn_diffusion_proc(
     model: str,
     od_config: OmniDiffusionConfig,
+    handshake_address: str | None = None,
+    request_address: str | None = None,
+    response_address: str | None = None,
 ) -> tuple[BaseProcess, str, str, str]:
     """Spawn a StageDiffusionProc subprocess.
 
     Returns ``(proc, handshake_address, request_address, response_address)``.
     """
-    handshake_address = get_open_zmq_ipc_path()
-    request_address = get_open_zmq_ipc_path()
-    response_address = get_open_zmq_ipc_path()
+    handshake_address = handshake_address or get_open_zmq_ipc_path()
+    request_address = request_address or get_open_zmq_ipc_path()
+    response_address = response_address or get_open_zmq_ipc_path()
 
     ctx = get_mp_context()
     proc = ctx.Process(
@@ -588,13 +617,14 @@ def spawn_diffusion_proc(
 def complete_diffusion_handshake(
     proc: BaseProcess,
     handshake_address: str,
+    handshake_timeout: int,
 ) -> None:
     """Wait for the diffusion subprocess to signal READY.
 
     On failure the process is terminated before re-raising.
     """
     try:
-        _perform_diffusion_handshake(proc, handshake_address)
+        _perform_diffusion_handshake(proc, handshake_address, handshake_timeout)
     except Exception:
         shutdown([proc])
         raise
@@ -603,6 +633,7 @@ def complete_diffusion_handshake(
 def _perform_diffusion_handshake(
     proc: BaseProcess,
     handshake_address: str,
+    handshake_timeout: int,
 ) -> None:
     """Run the handshake with the diffusion subprocess."""
     with zmq_socket_ctx(handshake_address, zmq.ROUTER, bind=True) as handshake_socket:
@@ -610,11 +641,15 @@ def _perform_diffusion_handshake(
         poller.register(handshake_socket, zmq.POLLIN)
         poller.register(proc.sentinel, zmq.POLLIN)
 
-        timeout_ms = _HANDSHAKE_POLL_TIMEOUT_S * 1000
+        timeout_ms = handshake_timeout * 1000
         while True:
             events = dict(poller.poll(timeout=timeout_ms))
             if not events:
-                raise TimeoutError("Timed out waiting for READY from StageDiffusionProc")
+                raise TimeoutError(
+                    f"Timed out waiting for READY from StageDiffusionProc after {handshake_timeout}s. "
+                    f"This typically indicates model loading or warmup is taking too long. "
+                    f"Consider increasing `stage_init_timeout` for large models."
+                )
             if handshake_socket in events:
                 identity, raw = handshake_socket.recv_multipart()
                 msg = msgspec.msgpack.decode(raw)
