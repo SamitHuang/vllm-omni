@@ -246,6 +246,19 @@ class Orchestrator:
                         idle = False
                         req_state = self.request_states.get(output.request_id)
                         if req_state is not None:
+                            if getattr(output, "error", None) is not None:
+                                await self.output_async_queue.put(
+                                    {
+                                        "type": "error",
+                                        "request_id": output.request_id,
+                                        "stage_id": stage_id,
+                                        "error": output.error,
+                                    }
+                                )
+                                self._cleanup_companion_state(output.request_id)
+                                self.request_states.pop(output.request_id, None)
+                                continue
+
                             stage_metrics = self._build_stage_metrics(stage_id, output.request_id, [output], req_state)
                             await self._route_output(stage_id, output, req_state, stage_metrics)
                     continue

@@ -154,6 +154,13 @@ class StageDiffusionClient:
                         "error": True,
                         "reason": error_msg,
                     }
+                elif req_id is not None:
+                    error_output = OmniRequestOutput.from_diffusion(
+                        request_id=req_id,
+                        images=[],
+                    )
+                    error_output.error = error_msg
+                    self._output_queue.put_nowait(error_output)
 
     # Fields that are subprocess-local and cannot be serialized across
     # process boundaries.  They are recreated in the subprocess with

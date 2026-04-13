@@ -153,12 +153,12 @@ class InlineStageDiffusionClient:
             logger.info("request_id: %s aborted: %s", request_id, str(e))
         except Exception as e:
             logger.exception("Diffusion request %s failed: %s", request_id, e)
-            # To propagate error to Orchestrator, we could enqueue a special error response
-            # But OmniRequestOutput doesn't have an error field. Wait, in StageDiffusionClient,
-            # an error message throws RuntimeError in Orchestrator.
-            # We don't have a way to inject error into Orchestrator output queue directly here.
-            # We will just log it for now, similar to how StageDiffusionClient does.
-            pass
+            error_output = OmniRequestOutput.from_diffusion(
+                request_id=request_id,
+                images=[],
+            )
+            error_output.error = str(e)
+            self._output_queue.put_nowait(error_output)
         finally:
             self._tasks.pop(request_id, None)
 
@@ -253,7 +253,12 @@ class InlineStageDiffusionClient:
             logger.info("request_id: %s aborted: %s", request_id, str(e))
         except Exception as e:
             logger.exception("Batch diffusion request %s failed: %s", request_id, e)
-            pass
+            error_output = OmniRequestOutput.from_diffusion(
+                request_id=request_id,
+                images=[],
+            )
+            error_output.error = str(e)
+            self._output_queue.put_nowait(error_output)
         finally:
             self._tasks.pop(request_id, None)
 
