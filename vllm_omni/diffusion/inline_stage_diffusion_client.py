@@ -337,7 +337,8 @@ class InlineStageDiffusionClient:
             task.cancel()
 
         try:
-            self._executor.shutdown(wait=False)
+            # Cancel queued futures and wait for the running one to complete deterministically
+            self._executor.shutdown(wait=True, cancel_futures=True)
         except Exception:
             pass
 
