@@ -206,7 +206,7 @@ def test_async_video_generation_with_audio_bypasses_base64(test_client, mocker: 
 def test_t2v_video_generation_form(test_client, mocker: MockerFixture):
     fps_values = []
 
-    def _fake_encode(video, fps, audio=None, audio_sample_rate=None):
+    def _fake_encode(video, fps, audio=None, audio_sample_rate=None, **kwargs):
         fps_values.append(fps)
         return b"fake-video"
 
@@ -320,7 +320,7 @@ def test_i2v_video_generation_with_image_reference_form(test_client, mocker: Moc
 def test_seconds_defaults_fps_and_frames(test_client, mocker: MockerFixture):
     fps_values = []
 
-    def _fake_encode(video, fps, audio=None, audio_sample_rate=None):
+    def _fake_encode(video, fps, audio=None, audio_sample_rate=None, **kwargs):
         fps_values.append(fps)
         return b"fake-video"
 
