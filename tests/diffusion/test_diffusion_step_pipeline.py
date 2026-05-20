@@ -285,6 +285,19 @@ def _make_scheduler_output(req, sched_req_id="req-1", step_id=0, finished_req_id
     )
 
 
+def _make_batch_scheduler_output(reqs, *, step_id=0, finished_req_ids=None):
+    """Scheduler output for a homogeneous batch (one NewRequestData per req)."""
+    new_reqs = [NewRequestData(sched_req_id=r.request_ids[0], req=r) for r in reqs]
+    return DiffusionSchedulerOutput(
+        step_id=step_id,
+        scheduled_new_reqs=new_reqs,
+        scheduled_cached_reqs=CachedRequestData.make_empty(),
+        finished_req_ids=set() if finished_req_ids is None else set(finished_req_ids),
+        num_running_reqs=len(new_reqs),
+        num_waiting_reqs=0,
+    )
+
+
 def _make_cached_scheduler_output(sched_req_id="req-1", step_id=1, finished_req_ids=None):
     return DiffusionSchedulerOutput(
         step_id=step_id,
@@ -561,6 +574,30 @@ class TestWorker:
         DiffusionWorker.execute_stepwise(worker, second)
 
         assert manager.calls == [(lora_request, 0.5), (lora_request, 0.5)]
+
+    def test_activates_single_lora_for_homogeneous_batch(self):
+        """Multiple requests sharing the same LoRA → exactly one activation,
+        and every request id is registered in ``_step_lora_state``."""
+        from vllm_omni.lora.request import LoRARequest
+
+        lora_request = LoRARequest(lora_name="adapter", lora_int_id=9, lora_path="/tmp/lora")
+        reqs = []
+        for rid in ("req-1", "req-2", "req-3"):
+            r = _make_engine_request(rid)
+            r.sampling_params.lora_request = lora_request
+            r.sampling_params.lora_scale = 0.6
+            reqs.append(r)
+
+        manager = _RecordingLoRAManager()
+        worker = _make_step_worker(lora_manager=manager)
+        scheduler_output = _make_batch_scheduler_output(reqs)
+
+        DiffusionWorker.execute_stepwise(worker, scheduler_output)
+
+        assert manager.calls == [(lora_request, 0.6)]
+        assert set(worker._step_lora_state) == {"req-1", "req-2", "req-3"}
+        for entry in worker._step_lora_state.values():
+            assert entry == (lora_request, 0.6)
 
     def test_evicts_step_lora_state_for_finished_requests(self):
         from vllm_omni.lora.request import LoRARequest
