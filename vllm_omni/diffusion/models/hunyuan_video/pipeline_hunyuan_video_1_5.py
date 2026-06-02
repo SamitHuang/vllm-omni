@@ -30,8 +30,8 @@ from vllm_omni.diffusion.models.hunyuan_video.hunyuan_video_15_transformer impor
 from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin
 from vllm_omni.diffusion.models.t5_encoder import T5EncoderModel
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
-from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.diffusion.utils.tf_utils import get_transformer_config_kwargs
+from vllm_omni.diffusion.worker.request_batch import RequestBatch
 from vllm_omni.platforms import current_omni_platform
 
 logger = logging.getLogger(__name__)
@@ -387,7 +387,7 @@ class HunyuanVideo15Pipeline(nn.Module, CFGParallelMixin, ProgressBarMixin, Diff
 
     def forward(
         self,
-        req: OmniDiffusionRequest,
+        req: RequestBatch,
         num_inference_steps: int = 50,
         guidance_scale: float = 6.0,
         height: int = 480,
@@ -396,7 +396,7 @@ class HunyuanVideo15Pipeline(nn.Module, CFGParallelMixin, ProgressBarMixin, Diff
         output_type: str | None = "np",
         generator: torch.Generator | list[torch.Generator] | None = None,
         **kwargs,
-    ) -> DiffusionOutput:
+    ) -> list[DiffusionOutput]:
         if len(req.prompts) > 1:
             raise ValueError("This model only supports a single prompt per request.")
         if len(req.prompts) == 1:
@@ -541,7 +541,7 @@ class HunyuanVideo15Pipeline(nn.Module, CFGParallelMixin, ProgressBarMixin, Diff
             latents = latents.to(self.vae.dtype) / self.vae.config.scaling_factor
             output = self.vae.decode(latents, return_dict=False)[0]
 
-        return DiffusionOutput(output=output)
+        return [DiffusionOutput(output=output)]
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         loader = AutoWeightsLoader(self)

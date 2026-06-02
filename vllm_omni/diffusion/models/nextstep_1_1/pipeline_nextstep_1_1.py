@@ -34,7 +34,7 @@ from vllm_omni.diffusion.models.nextstep_1_1.modeling_nextstep import (
     NextStepModel,
 )
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
-from vllm_omni.diffusion.request import OmniDiffusionRequest
+from vllm_omni.diffusion.worker.request_batch import RequestBatch
 from vllm_omni.model_executor.model_loader.weight_utils import (
     download_weights_from_hf_specific,
 )
@@ -554,7 +554,7 @@ class NextStep11Pipeline(nn.Module, DiffusionPipelineProfilerMixin):
     @torch.no_grad()
     def forward(
         self,
-        req: OmniDiffusionRequest,
+        req: RequestBatch,
         prompt: str | list[str] | None = None,
         height: int | None = None,
         width: int | None = None,
@@ -565,7 +565,7 @@ class NextStep11Pipeline(nn.Module, DiffusionPipelineProfilerMixin):
         generator: torch.Generator | None = None,
         seed: int | None = None,
         **kwargs,
-    ) -> DiffusionOutput:
+    ) -> list[DiffusionOutput]:
         """
         Generate images from text prompts.
 
@@ -706,9 +706,12 @@ class NextStep11Pipeline(nn.Module, DiffusionPipelineProfilerMixin):
         sampled_images = self.vae.decode(latents.to(self.vae.dtype)).sample
         sampled_images = sampled_images.detach().cpu().to(torch.float32)
 
-        return DiffusionOutput(
-            output=sampled_images, stage_durations=self.stage_durations if hasattr(self, "stage_durations") else None
-        )
+        return [
+            DiffusionOutput(
+                output=sampled_images,
+                stage_durations=self.stage_durations if hasattr(self, "stage_durations") else None,
+            )
+        ]
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         """Load model weights."""

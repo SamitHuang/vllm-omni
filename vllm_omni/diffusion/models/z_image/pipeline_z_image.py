@@ -41,7 +41,7 @@ from vllm_omni.diffusion.models.z_image.z_image_transformer import (
     ZImageTransformer2DModel,
 )
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
-from vllm_omni.diffusion.request import OmniDiffusionRequest
+from vllm_omni.diffusion.worker.request_batch import RequestBatch
 from vllm_omni.model_executor.model_loader.weight_utils import (
     download_weights_from_hf_specific,
 )
@@ -161,6 +161,8 @@ def retrieve_timesteps(
 
 
 class ZImagePipeline(nn.Module, DiffusionPipelineProfilerMixin):
+    supports_request_batch = True
+
     def __init__(
         self,
         *,
@@ -405,7 +407,7 @@ class ZImagePipeline(nn.Module, DiffusionPipelineProfilerMixin):
 
     def forward(
         self,
-        req: OmniDiffusionRequest,
+        req: RequestBatch,
         prompt: str | list[str] | None = None,
         image: PipelineImageInput = None,
         strength: float = 0.6,
@@ -428,7 +430,7 @@ class ZImagePipeline(nn.Module, DiffusionPipelineProfilerMixin):
         callback_on_step_end: Callable[[int, int, dict], None] | None = None,
         callback_on_step_end_tensor_inputs: list[str] = ["latents"],
         max_sequence_length: int = 512,
-    ) -> DiffusionOutput:
+    ) -> list[DiffusionOutput]:
         r"""
         Function invoked when calling the pipeline for generation.
 
@@ -823,9 +825,17 @@ class ZImagePipeline(nn.Module, DiffusionPipelineProfilerMixin):
             image = self.vae.decode(latents, return_dict=False)[0]
             # image = self.image_processor.postprocess(image, output_type=output_type)
 
-        return DiffusionOutput(
-            output=image, stage_durations=self.stage_durations if hasattr(self, "stage_durations") else None
-        )
+        stage_durations = self.stage_durations if hasattr(self, "stage_durations") else None
+        n = req.sampling_params.num_outputs_per_prompt
+        if req.num_reqs == 1:
+            return [DiffusionOutput(output=image, stage_durations=stage_durations)]
+        return [
+            DiffusionOutput(
+                output=image[i * n : (i + 1) * n],
+                stage_durations=stage_durations,
+            )
+            for i in range(req.num_reqs)
+        ]
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         loader = AutoWeightsLoader(self)

@@ -24,7 +24,7 @@ from vllm_omni.diffusion.distributed.cfg_parallel import CFGParallelMixin
 from vllm_omni.diffusion.distributed.utils import get_local_device
 from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineLoader
 from vllm_omni.diffusion.models.interface import SupportAudioInput, SupportImageInput
-from vllm_omni.diffusion.request import OmniDiffusionRequest
+from vllm_omni.diffusion.worker.request_batch import RequestBatch
 
 try:
     from dreamid_omni.utils.divisible_crop import DivisibleCrop
@@ -475,9 +475,9 @@ class DreamIDOmniPipeline(nn.Module, CFGParallelMixin, SupportImageInput, Suppor
 
     def forward(
         self,
-        request: OmniDiffusionRequest,
+        request: RequestBatch,
         **kwargs,
-    ) -> DiffusionOutput:
+    ) -> list[DiffusionOutput]:
         """Main forward pass for DreamID-Omni pipeline for R2AV task."""
         # Extract parameters from request
         r_prompts = request.prompts[0]
@@ -598,4 +598,4 @@ class DreamIDOmniPipeline(nn.Module, CFGParallelMixin, SupportImageInput, Suppor
         video_latents_for_vae = video_noise_for_decode.unsqueeze(0)
         generated_video = self.vae_model_video.wrapped_decode(video_latents_for_vae).squeeze(0).cpu().float().numpy()
 
-        return DiffusionOutput(output=(generated_video, generated_audio))
+        return [DiffusionOutput(output=(generated_video, generated_audio))]
