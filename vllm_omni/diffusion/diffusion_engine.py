@@ -32,7 +32,7 @@ from vllm_omni.diffusion.registry import (
 )
 from vllm_omni.diffusion.request import DUMMY_DIFFUSION_REQUEST_ID, OmniDiffusionRequest
 from vllm_omni.diffusion.sched import RequestScheduler, SchedulerInterface, StepScheduler
-from vllm_omni.diffusion.sched.interface import DiffusionRequestStatus
+from vllm_omni.diffusion.sched.interface import DiffusionRequestStatus, DiffusionSchedulerOutput
 from vllm_omni.diffusion.worker.utils import BaseRunnerOutput, BatchRunnerOutput, RunnerOutput
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams, OmniTextPrompt
 from vllm_omni.outputs import OmniRequestOutput
@@ -163,10 +163,6 @@ class DiffusionEngine:
             StepScheduler() if self.step_execution else RequestScheduler()
         )
         self.scheduler.initialize(od_config)
-        if self.scheduler.max_num_running_reqs > 1 and not self.step_execution:
-            max_num_seqs = self.scheduler.max_num_running_reqs
-            self.scheduler.max_num_running_reqs = 1
-            logger.warning(f"Non-stepwise-execution does not support max-num-seqs={max_num_seqs}, set it to 1.")
         self.main_loop: asyncio.AbstractEventLoop | None = None
         self.stop_event: threading.Event | None = None
         self.worker_thread: threading.Thread | None = None
@@ -183,7 +179,7 @@ class DiffusionEngine:
         self._shutdown_complete = False
         self.abort_queue: queue.Queue[str] = queue.Queue()
         self._rpc_queue: queue.Queue[_RpcTask] = queue.Queue()
-        self.execute_fn = self.executor.execute_step if self.step_execution else self.executor.execute_request
+        self.execute_fn = self.executor.execute_step if self.step_execution else self._execute_request_mode
 
         try:
             self._dummy_run()
@@ -191,6 +187,18 @@ class DiffusionEngine:
             logger.error(f"Dummy run failed: {e}")
             self.close()
             raise e
+
+    def _execute_request_mode(self, sched_output: DiffusionSchedulerOutput) -> BaseRunnerOutput:
+        """Dispatch request-mode execution by the number of scheduled requests.
+
+        When more than one request is scheduled in a cycle, send the whole batch
+        to the workers in a single RPC (``execute_batch``); otherwise fall back to
+        the per-request path (``execute_request``). This keeps single-request and
+        dummy-run traffic on the original path while batching multi-request cycles.
+        """
+        if sched_output.num_scheduled_reqs > 1:
+            return self.executor.execute_batch(sched_output)
+        return self.executor.execute_request(sched_output)
 
     async def _check_and_start_background_loop(self):
         if self._closed:
@@ -240,11 +248,10 @@ class DiffusionEngine:
                 OmniRequestOutput.from_diffusion(
                     request_id=request.request_id,
                     images=[],
-                    prompt=prompt,
+                    prompt=request.prompt,
                     metrics={},
                     latents=None,
-                )
-                for i, prompt in enumerate(request.prompts)
+                ),
             ]
 
         # When CPU offload is enabled, move output to CPU before
@@ -320,153 +327,68 @@ class DiffusionEngine:
                 mm["audio_sample_rate"] = model_audio_sample_rate
             return mm
 
-        if len(request.prompts) == 1:
-            # Single request: return single OmniRequestOutput
-            prompt = request.prompts[0]
-            request_id = request.request_id
+        prompt = request.prompt
+        request_id = request.request_id
 
-            if is_text_output:
-                return [
-                    OmniRequestOutput.from_diffusion(
-                        request_id=request_id,
-                        images=[],
-                        prompt=prompt,
-                        metrics=metrics,
-                        custom_output=custom_output,
-                        final_output_type="text",
-                        stage_durations=output.stage_durations,
-                        peak_memory_mb=output.peak_memory_mb,
-                    ),
-                ]
-            if is_audio_output:
-                request_audio_payload = outputs[0] if len(outputs) == 1 else outputs
-                return [
-                    OmniRequestOutput.from_diffusion(
-                        request_id=request_id,
-                        images=[],
-                        prompt=prompt,
-                        metrics=metrics,
-                        latents=output.trajectory_latents,
-                        trajectory_latents=output.trajectory_latents,
-                        trajectory_timesteps=output.trajectory_timesteps,
-                        trajectory_log_probs=output.trajectory_log_probs,
-                        trajectory_decoded=output.trajectory_decoded,
-                        multimodal_output=_audio_mm(request_audio_payload),
-                        final_output_type="audio",
-                        stage_durations=output.stage_durations,
-                        peak_memory_mb=output.peak_memory_mb,
-                    ),
-                ]
-            else:
-                mm_output = {}
-                if audio_payload is not None:
-                    mm_output["audio"] = audio_payload
-                if model_audio_sample_rate is not None:
-                    mm_output["audio_sample_rate"] = model_audio_sample_rate
-                if model_fps is not None:
-                    mm_output["fps"] = model_fps
-                if action_payload is not None:
-                    mm_output["actions"] = action_payload
-                return [
-                    OmniRequestOutput.from_diffusion(
-                        request_id=request_id,
-                        images=outputs,
-                        prompt=prompt,
-                        metrics=metrics,
-                        latents=output.trajectory_latents,
-                        trajectory_latents=output.trajectory_latents,
-                        trajectory_timesteps=output.trajectory_timesteps,
-                        trajectory_log_probs=output.trajectory_log_probs,
-                        trajectory_decoded=output.trajectory_decoded,
-                        custom_output=custom_output,
-                        multimodal_output=mm_output,
-                        stage_durations=output.stage_durations,
-                        peak_memory_mb=output.peak_memory_mb,
-                    ),
-                ]
-        else:
-            # Multiple requests: return list of OmniRequestOutput
-            # Split images based on num_outputs_per_prompt for each request
-            results = []
-            output_idx = 0
-            request_id = request.request_id
+        if is_text_output:
+            return [
+                OmniRequestOutput.from_diffusion(
+                    request_id=request_id,
+                    images=[],
+                    prompt=prompt,
+                    metrics=metrics,
+                    custom_output=custom_output,
+                    final_output_type="text",
+                    stage_durations=output.stage_durations,
+                    peak_memory_mb=output.peak_memory_mb,
+                ),
+            ]
+        if is_audio_output:
+            request_audio_payload = outputs[0] if len(outputs) == 1 else outputs
+            return [
+                OmniRequestOutput.from_diffusion(
+                    request_id=request_id,
+                    images=[],
+                    prompt=prompt,
+                    metrics=metrics,
+                    latents=output.trajectory_latents,
+                    trajectory_latents=output.trajectory_latents,
+                    trajectory_timesteps=output.trajectory_timesteps,
+                    trajectory_log_probs=output.trajectory_log_probs,
+                    trajectory_decoded=output.trajectory_decoded,
+                    multimodal_output=_audio_mm(request_audio_payload),
+                    final_output_type="audio",
+                    stage_durations=output.stage_durations,
+                    peak_memory_mb=output.peak_memory_mb,
+                ),
+            ]
 
-            for i, prompt in enumerate(request.prompts):
-                # Get images for this request
-                num_outputs = request.sampling_params.num_outputs_per_prompt
-                start_idx = output_idx
-                end_idx = start_idx + num_outputs
-                request_outputs = outputs[start_idx:end_idx] if output_idx < len(outputs) else []
-                output_idx = end_idx
-
-                if is_audio_output:
-                    request_audio_payload = request_outputs[0] if len(request_outputs) == 1 else request_outputs
-                    results.append(
-                        OmniRequestOutput.from_diffusion(
-                            request_id=request_id,
-                            images=[],
-                            prompt=prompt,
-                            metrics=metrics,
-                            latents=output.trajectory_latents,
-                            trajectory_latents=output.trajectory_latents,
-                            trajectory_timesteps=output.trajectory_timesteps,
-                            trajectory_log_probs=output.trajectory_log_probs,
-                            trajectory_decoded=output.trajectory_decoded,
-                            multimodal_output=_audio_mm(request_audio_payload),
-                            final_output_type="audio",
-                            stage_durations=output.stage_durations,
-                            peak_memory_mb=output.peak_memory_mb,
-                        ),
-                    )
-                else:
-                    mm_output = {}
-                    if audio_payload is not None:
-                        sliced_audio = audio_payload
-                        if isinstance(audio_payload, (list, tuple)):
-                            sliced_audio = audio_payload[start_idx:end_idx]
-                            if len(sliced_audio) == 1:
-                                sliced_audio = sliced_audio[0]
-                        elif hasattr(audio_payload, "shape") and getattr(audio_payload, "shape", None) is not None:
-                            if len(audio_payload.shape) > 0 and audio_payload.shape[0] >= end_idx:
-                                sliced_audio = audio_payload[start_idx:end_idx]
-                                if num_outputs == 1:
-                                    sliced_audio = sliced_audio[0]
-                        mm_output["audio"] = sliced_audio
-                    if model_audio_sample_rate is not None:
-                        mm_output["audio_sample_rate"] = model_audio_sample_rate
-                    if model_fps is not None:
-                        mm_output["fps"] = model_fps
-                    if action_payload is not None:
-                        sliced_actions = action_payload
-                        if isinstance(action_payload, (list, tuple)):
-                            sliced_actions = action_payload[start_idx:end_idx]
-                            if len(sliced_actions) == 1:
-                                sliced_actions = sliced_actions[0]
-                        elif hasattr(action_payload, "shape") and getattr(action_payload, "shape", None) is not None:
-                            if len(action_payload.shape) > 0 and action_payload.shape[0] >= end_idx:
-                                sliced_actions = action_payload[start_idx:end_idx]
-                                if num_outputs == 1:
-                                    sliced_actions = sliced_actions[0]
-                        mm_output["actions"] = sliced_actions
-                    results.append(
-                        OmniRequestOutput.from_diffusion(
-                            request_id=request_id,
-                            images=request_outputs,
-                            prompt=prompt,
-                            metrics=metrics,
-                            latents=output.trajectory_latents,
-                            trajectory_latents=output.trajectory_latents,
-                            trajectory_timesteps=output.trajectory_timesteps,
-                            trajectory_log_probs=output.trajectory_log_probs,
-                            trajectory_decoded=output.trajectory_decoded,
-                            custom_output=custom_output,
-                            multimodal_output=mm_output,
-                            stage_durations=output.stage_durations,
-                            peak_memory_mb=output.peak_memory_mb,
-                        ),
-                    )
-
-            return results
+        mm_output: dict[str, Any] = {}
+        if audio_payload is not None:
+            mm_output["audio"] = audio_payload
+        if model_audio_sample_rate is not None:
+            mm_output["audio_sample_rate"] = model_audio_sample_rate
+        if model_fps is not None:
+            mm_output["fps"] = model_fps
+        if action_payload is not None:
+            mm_output["actions"] = action_payload
+        return [
+            OmniRequestOutput.from_diffusion(
+                request_id=request_id,
+                images=outputs,
+                prompt=prompt,
+                metrics=metrics,
+                latents=output.trajectory_latents,
+                trajectory_latents=output.trajectory_latents,
+                trajectory_timesteps=output.trajectory_timesteps,
+                trajectory_log_probs=output.trajectory_log_probs,
+                trajectory_decoded=output.trajectory_decoded,
+                custom_output=custom_output,
+                multimodal_output=mm_output,
+                stage_durations=output.stage_durations,
+                peak_memory_mb=output.peak_memory_mb,
+            ),
+        ]
 
     def _busy_loop(self):
         while not self.stop_event.is_set():
@@ -728,7 +650,7 @@ class DiffusionEngine:
             logger.info("Skipping dummy warmup run (num_frames=0)")
             return
         req = OmniDiffusionRequest(
-            prompts=[prompt],
+            prompt=prompt,
             request_id=DUMMY_DIFFUSION_REQUEST_ID,
             sampling_params=OmniDiffusionSamplingParams(
                 height=height,
@@ -954,9 +876,12 @@ class DiffusionEngine:
             raise RuntimeError(f"Diffusion scheduler lost state for request {request_id}.")
 
         if state.status == DiffusionRequestStatus.FINISHED_ABORTED:
+            # Preserve runner-provided abort details when available.
+            if runner_output is not None and runner_output.result is not None and runner_output.result.aborted:
+                return runner_output.result
             return DiffusionOutput(
                 aborted=True,
-                abort_message=f"Request {state.req.request_id} aborted.",
+                abort_message=f"Request {request_id} aborted.",
             )
 
         if runner_output is not None and runner_output.result is not None:
