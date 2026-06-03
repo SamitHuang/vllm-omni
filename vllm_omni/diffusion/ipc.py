@@ -133,8 +133,9 @@ def _pack_diffusion_fields(output: DiffusionOutput) -> DiffusionOutput:
 def pack_diffusion_output_shm(output: object) -> object:
     """Replace large tensors in diffusion worker outputs with SHM handles.
 
-    Supports either a bare ``DiffusionOutput`` or a wrapper object carrying one
-    in ``.result`` (for example ``RunnerOutput``).
+    Supports a bare ``DiffusionOutput``, a wrapper object carrying one in
+    ``.result`` (for example ``RunnerOutput``), or a batch wrapper carrying
+    ``RunnerOutput`` objects in ``.runner_outputs``.
     """
     if isinstance(output, DiffusionOutput):
         return _pack_diffusion_fields(output)
@@ -142,6 +143,11 @@ def pack_diffusion_output_shm(output: object) -> object:
     result = getattr(output, "result", None)
     if isinstance(result, DiffusionOutput):
         output.result = _pack_diffusion_fields(result)
+
+    runner_outputs = getattr(output, "runner_outputs", None)
+    if isinstance(runner_outputs, list):
+        for runner_output in runner_outputs:
+            pack_diffusion_output_shm(runner_output)
     return output
 
 
@@ -161,4 +167,9 @@ def unpack_diffusion_output_shm(output: object) -> object:
     result = getattr(output, "result", None)
     if isinstance(result, DiffusionOutput):
         output.result = _unpack_diffusion_fields(result)
+
+    runner_outputs = getattr(output, "runner_outputs", None)
+    if isinstance(runner_outputs, list):
+        for runner_output in runner_outputs:
+            unpack_diffusion_output_shm(runner_output)
     return output
