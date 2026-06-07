@@ -13,7 +13,7 @@ import torch
 from PIL import Image
 from torch import nn
 
-from vllm_omni.diffusion.worker.request_batch import RequestBatch
+from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch
 
 pytestmark = [pytest.mark.core_model, pytest.mark.cpu, pytest.mark.diffusion]
 
@@ -218,8 +218,8 @@ def make_sampling_params(**overrides: Any) -> SimpleNamespace:
     return SimpleNamespace(**values)
 
 
-def make_request_batch(prompt: Any, sampling_params: SimpleNamespace) -> RequestBatch:
-    return RequestBatch(
+def make_request_batch(prompt: Any, sampling_params: SimpleNamespace) -> DiffusionRequestBatch:
+    return DiffusionRequestBatch(
         requests=[
             SimpleNamespace(
                 prompt=prompt,
