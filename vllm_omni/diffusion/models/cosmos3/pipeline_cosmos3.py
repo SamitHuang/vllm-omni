@@ -49,6 +49,7 @@ from vllm_omni.diffusion.models.interface import (
 from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin, _is_rank_zero
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
 from vllm_omni.diffusion.request import OmniDiffusionRequest
+from vllm_omni.diffusion.worker.request_batch import RequestBatch
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 
 from .action import (
@@ -915,7 +916,7 @@ class Cosmos3OmniDiffusersPipeline(
         return self._sound_tokenizer
 
     @staticmethod
-    def _is_t2i_request(req: OmniDiffusionRequest) -> bool:
+    def _is_t2i_request(req: RequestBatch) -> bool:
         """Detect text-to-image mode from request-level prompt modalities."""
         if not req.prompts:
             return False
@@ -1803,15 +1804,16 @@ class Cosmos3OmniDiffusersPipeline(
 
     def forward(
         self,
-        req: OmniDiffusionRequest,
-    ) -> DiffusionOutput:
+        req: RequestBatch,
+    ) -> list[DiffusionOutput]:
+        if req.num_reqs != 1:
+            raise ValueError("Cosmos3OmniDiffusersPipeline currently supports single-request forward.")
         pipeline_start = time.time()
 
         # --- Parse request ---
-        if len(req.prompts) > 1:
+        prompt_data = req.prompts[0] if req.prompts else ""
+        if isinstance(prompt_data, list):
             raise ValueError("Cosmos3OmniDiffusersPipeline currently supports a single prompt per request.")
-
-        prompt_data = req.prompts[0]
         if isinstance(prompt_data, str):
             prompt = prompt_data
             negative_prompt = None
@@ -2147,20 +2149,22 @@ class Cosmos3OmniDiffusersPipeline(
             if _is_rank_zero():
                 logger.info("Decoding sound...")
             audio = self._decode_sound_latents(sound_latents, target_audio_samples)
-            return DiffusionOutput(output={"video": video, "audio": audio, "audio_sample_rate": sound_sample_rate})
+            return [DiffusionOutput(output={"video": video, "audio": audio, "audio_sample_rate": sound_sample_rate})]
 
         if action_enabled:
             if action_latents is None or raw_action_dim is None or domain_id is None:
                 raise ValueError("Cosmos3 action generation finished without action latents.")
             action = action_latents[:, :, :raw_action_dim].detach().cpu()
-            return DiffusionOutput(
-                output={"video": video},
-                custom_output={
-                    "action": action,
-                    "raw_action_dim": raw_action_dim,
-                    "action_mode": action_mode,
-                    "domain_id": domain_id,
-                },
-            )
+            return [
+                DiffusionOutput(
+                    output={"video": video},
+                    custom_output={
+                        "action": action,
+                        "raw_action_dim": raw_action_dim,
+                        "action_mode": action_mode,
+                        "domain_id": domain_id,
+                    },
+                )
+            ]
 
-        return DiffusionOutput(output={"image": video} if is_t2i else {"video": video})
+        return [DiffusionOutput(output={"image": video} if is_t2i else {"video": video})]
