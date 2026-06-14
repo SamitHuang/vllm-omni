@@ -14,6 +14,7 @@ import torch
 from pytest_mock import MockerFixture
 
 import vllm_omni.diffusion.diffusion_engine as diffusion_engine_module
+from vllm_omni.diffusion.data import DiffusionOutput
 from vllm_omni.diffusion.diffusion_engine import DiffusionEngine, _move_tensor_tree_to_cpu
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.diffusion.sched.interface import (
@@ -85,6 +86,11 @@ class _SingleRequestPipeline:
     pass
 
 
+class _SingleRequestOverridePipeline(_BatchCapablePipeline):
+    def forward(self, req, prompt_ids=None):
+        return DiffusionOutput(output=None)
+
+
 def _make_request_mode_sched_output(*request_ids: str) -> RealDiffusionSchedulerOutput:
     new_reqs = [
         NewRequestData(
@@ -153,6 +159,21 @@ class TestRequestBatchCapability:
         )
 
         assert diffusion_engine_module.supports_request_batch(od_config) is True
+
+    def test_supports_request_batch_rejects_custom_single_request_forward_override(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        od_config = SimpleNamespace(
+            model_class_name="BatchPipeline",
+            custom_pipeline_args={"pipeline_class": _SingleRequestOverridePipeline},
+        )
+        monkeypatch.setattr(
+            diffusion_engine_module.DiffusionModelRegistry,
+            "_try_load_model_cls",
+            lambda model_class_name: None,
+        )
+
+        assert diffusion_engine_module.supports_request_batch(od_config) is False
 
     def test_supports_request_batch_rejects_invalid_custom_pipeline_class_name(
         self,
