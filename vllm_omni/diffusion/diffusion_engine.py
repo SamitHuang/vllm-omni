@@ -535,11 +535,11 @@ class DiffusionEngine:
         if max_wait_s <= 0:
             return
 
-        max_batch = getattr(self.scheduler, "max_num_running_reqs", 1)
-        num_waiting = getattr(self.scheduler, "num_waiting_requests", lambda: 0)
-        num_running = getattr(self.scheduler, "num_running_requests", lambda: 0)
+        max_batch = self.scheduler.max_num_running_reqs
+        waiting = self.scheduler.num_waiting_requests()
+        running = self.scheduler.num_running_requests()
 
-        if num_running() > 0:
+        if running > 0:
             return
 
         start = time.monotonic()
@@ -551,7 +551,7 @@ class DiffusionEngine:
         stable_window_s = min(0.05, max_wait_s / 5.0)
 
         while not self.stop_event.is_set():
-            waiting = num_waiting()
+            waiting = self.scheduler.num_waiting_requests()
             now = time.monotonic()
 
             if waiting >= max_batch:
@@ -569,7 +569,7 @@ class DiffusionEngine:
             self._cv.wait(timeout=min(remaining, 0.002))
 
         waited_ms = (time.monotonic() - start) * 1000.0
-        final_waiting = num_waiting()
+        final_waiting = self.scheduler.num_waiting_requests()
         if final_waiting > 0:
             logger.info(
                 "[RequestBatch] admission wait done waiting=%d max_batch=%d waited_ms=%.1f",

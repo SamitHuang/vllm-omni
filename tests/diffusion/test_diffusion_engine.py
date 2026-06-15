@@ -283,6 +283,80 @@ class TestRequestBatchCapability:
         fake_executor.execute_request.assert_not_called()
 
 
+class TestRequestBatchAdmission:
+    pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.cpu]
+
+    def test_scheduler_exposes_waiting_and_running_counts(self) -> None:
+        from vllm_omni.diffusion.sched import RequestScheduler
+
+        od_config = SimpleNamespace(max_num_seqs=4)
+        scheduler = RequestScheduler()
+        scheduler.initialize(od_config)
+
+        assert scheduler.num_waiting_requests() == 0
+        assert scheduler.num_running_requests() == 0
+
+        scheduler.add_request(
+            OmniDiffusionRequest(
+                prompt="prompt_a",
+                sampling_params=OmniDiffusionSamplingParams(num_inference_steps=1),
+                request_id="req-a",
+            )
+        )
+        scheduler.add_request(
+            OmniDiffusionRequest(
+                prompt="prompt_b",
+                sampling_params=OmniDiffusionSamplingParams(num_inference_steps=1),
+                request_id="req-b",
+            )
+        )
+        assert scheduler.num_waiting_requests() == 2
+        assert scheduler.num_running_requests() == 0
+
+        scheduler.schedule()
+        assert scheduler.num_waiting_requests() == 0
+        assert scheduler.num_running_requests() == 2
+
+    def test_request_batch_admission_exits_early_when_waiting_queue_stable(self) -> None:
+        from vllm_omni.diffusion.sched import RequestScheduler
+
+        od_config = SimpleNamespace(
+            max_num_seqs=32,
+            request_batch_max_wait_ms=1000.0,
+            step_execution=False,
+        )
+        scheduler = RequestScheduler()
+        scheduler.initialize(od_config)
+        for idx in range(2):
+            scheduler.add_request(
+                OmniDiffusionRequest(
+                    prompt=f"prompt_{idx}",
+                    sampling_params=OmniDiffusionSamplingParams(num_inference_steps=1),
+                    request_id=f"req-{idx}",
+                )
+            )
+
+        engine = object.__new__(DiffusionEngine)
+        engine.od_config = od_config
+        engine.scheduler = scheduler
+        engine.step_execution = False
+        engine.supports_request_batch = True
+        engine.stop_event = threading.Event()
+        engine._rpc_lock = threading.RLock()
+        engine._cv = threading.Condition(engine._rpc_lock)
+
+        start = time.monotonic()
+        with engine._cv:
+            engine._wait_for_request_batch_admission_locked()
+        waited_s = time.monotonic() - start
+
+        # Stable-window exit (~50ms), not the full 1000ms deadline.
+        assert waited_s < 0.5
+        assert waited_s >= 0.04
+        assert scheduler.num_waiting_requests() == 2
+        assert scheduler.num_running_requests() == 0
+
+
 @pytest.mark.core_model
 @pytest.mark.diffusion
 @pytest.mark.cpu
