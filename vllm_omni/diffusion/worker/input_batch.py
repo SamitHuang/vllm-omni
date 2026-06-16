@@ -208,14 +208,6 @@ def _get_request_prompt_seq_lens(
     return [int(embeds.shape[1])] * int(embeds.shape[0])
 
 
-def _sync_request_seq_lens_from_embeds(
-    state: DiffusionRequestState,
-    embeds: torch.Tensor,
-    seq_lens_attr: str,
-) -> None:
-    setattr(state, seq_lens_attr, [int(embeds.shape[1])] * int(embeds.shape[0]))
-
-
 def _prepare_request_prompt_field(
     state: DiffusionRequestState,
     *,
@@ -266,10 +258,10 @@ def _prepare_request_prompt_field(
         setattr(state, embeds_attr, embeds)
         if mask is not None:
             setattr(state, mask_attr, mask)
-        _sync_request_seq_lens_from_embeds(state, embeds, seq_lens_attr)
+        setattr(state, seq_lens_attr, [int(embeds.shape[1])] * int(embeds.shape[0]))
         return embeds, mask
 
-    _sync_request_seq_lens_from_embeds(state, embeds, seq_lens_attr)
+    setattr(state, seq_lens_attr, [int(embeds.shape[1])] * int(embeds.shape[0]))
     return embeds, mask
 
 
