@@ -2,18 +2,20 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import sys
+import types
 
 import pytest
 import torch
 
+from tests.helpers.mark import hardware_test
 from vllm_omni.diffusion.attention.backends.abstract import AttentionMetadata
 from vllm_omni.diffusion.attention.backends.registry import DiffusionAttentionBackendEnum
 from vllm_omni.diffusion.attention.backends.sdpa import SDPAImpl
 from vllm_omni.platforms import current_omni_platform
 
-is_cuda = current_omni_platform.is_cuda()
 
-
+@pytest.mark.core_model
+@pytest.mark.cpu
 def test_kernels_hub_platform_fallback(monkeypatch: pytest.MonkeyPatch):
     """Test that when kernels package is not available, the platform fallback logic
 
@@ -45,15 +47,14 @@ def test_kernels_hub_platform_fallback(monkeypatch: pytest.MonkeyPatch):
     assert backend_path == DiffusionAttentionBackendEnum.FLASH_ATTN.get_path()
 
     # Test FLASH_ATTN_3_HUB falls back to FLASH_ATTN_HUB on pre-Hopper GPUs
-    import types
-
     kernels_module = types.ModuleType("kernels")
     monkeypatch.setitem(sys.modules, "kernels", kernels_module)
     backend_path = CudaOmniPlatform.get_diffusion_attn_backend_cls("FLASH_ATTN_3_HUB", head_size=64)
     assert backend_path == DiffusionAttentionBackendEnum.FLASH_ATTN_HUB.get_path()
 
 
-@pytest.mark.skipif(not is_cuda, reason="Hub kernels execution requires CUDA platform")
+@pytest.mark.core_model
+@hardware_test(res={"cuda": "L4"}, num_cards=1)
 def test_kernels_hub_execution():
     """Verify basic forward of flash_attn_hub and flash_attn_3_hub, comparing with SDPA reference."""
     device = torch.device(current_omni_platform.device_type)
