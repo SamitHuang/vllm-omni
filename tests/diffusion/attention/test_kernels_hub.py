@@ -36,13 +36,21 @@ def test_kernels_hub_platform_fallback(monkeypatch: pytest.MonkeyPatch):
     )
     monkeypatch.setattr(PACKAGES_CHECKER, "get_packages_info", lambda: {"has_flash_attn": True})
 
-    # Test FLASH_ATTN_HUB falls back to FLASH_ATTN
+    # Test FLASH_ATTN_HUB falls back to FLASH_ATTN when kernels is unavailable
     backend_path = CudaOmniPlatform.get_diffusion_attn_backend_cls("FLASH_ATTN_HUB", head_size=64)
     assert backend_path == DiffusionAttentionBackendEnum.FLASH_ATTN.get_path()
 
-    # Test FLASH_ATTN_3_HUB falls back to FLASH_ATTN
+    # Test FLASH_ATTN_3_HUB falls back to FLASH_ATTN when kernels is unavailable
     backend_path = CudaOmniPlatform.get_diffusion_attn_backend_cls("FLASH_ATTN_3_HUB", head_size=64)
     assert backend_path == DiffusionAttentionBackendEnum.FLASH_ATTN.get_path()
+
+    # Test FLASH_ATTN_3_HUB falls back to FLASH_ATTN_HUB on pre-Hopper GPUs
+    import types
+
+    kernels_module = types.ModuleType("kernels")
+    monkeypatch.setitem(sys.modules, "kernels", kernels_module)
+    backend_path = CudaOmniPlatform.get_diffusion_attn_backend_cls("FLASH_ATTN_3_HUB", head_size=64)
+    assert backend_path == DiffusionAttentionBackendEnum.FLASH_ATTN_HUB.get_path()
 
 
 @pytest.mark.skipif(not is_cuda, reason="Hub kernels execution requires CUDA platform")

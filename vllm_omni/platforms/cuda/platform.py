@@ -137,6 +137,15 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
                         )
                         backend_upper = "FLASH_ATTN"
 
+            if backend_upper == "FLASH_ATTN_3_HUB":
+                fa3_hub_supported = compute_capability is not None and compute_capability.major >= 9
+                if not fa3_hub_supported:
+                    logger.warning(
+                        "FLASH_ATTN_3_HUB requires a Hopper-class GPU with compute capability >= 9.0. "
+                        "Falling back to FLASH_ATTN_HUB."
+                    )
+                    backend_upper = "FLASH_ATTN_HUB"
+
             if backend_upper == "FLASH_ATTN" and not flash_attn_supported:
                 if not compute_supported:
                     logger.warning(
