@@ -18,6 +18,36 @@ from vllm_omni.diffusion.attention.backends.utils.piecewise_attn import (
 logger = init_logger(__name__)
 
 
+def _run_varlen_dense(
+    varlen_func,
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    *,
+    causal: bool,
+    softmax_scale: float,
+) -> torch.Tensor:
+    batch_size, q_len = query.size()[:2]
+    k_len = key.size(1)
+    cu_seqlens_q = torch.arange(0, (batch_size + 1) * q_len, step=q_len, dtype=torch.int32, device=query.device)
+    cu_seqlens_k = torch.arange(0, (batch_size + 1) * k_len, step=k_len, dtype=torch.int32, device=query.device)
+
+    out = varlen_func(
+        q=query.flatten(0, 1),
+        k=key.flatten(0, 1),
+        v=value.flatten(0, 1),
+        cu_seqlens_q=cu_seqlens_q,
+        cu_seqlens_k=cu_seqlens_k,
+        max_seqlen_q=q_len,
+        max_seqlen_k=k_len,
+        causal=causal,
+        softmax_scale=softmax_scale,
+    )
+    if isinstance(out, tuple):
+        out = out[0]
+    return out.reshape(batch_size, q_len, *out.shape[1:])
+
+
 class FlashAttentionHubBackend(AttentionBackend):
     accept_output_buffer: bool = True
 
@@ -84,7 +114,16 @@ class FlashAttentionHubImpl(AttentionImpl):
         return out[0] if isinstance(out, tuple) else out
 
     def _flash_wrapper(self, q, k, v, *, attn_func, **kwargs):
-        return self._unwrap_flash_output(attn_func(q, k, v, **kwargs))
+        if attn_func is not None:
+            return self._unwrap_flash_output(attn_func(q, k, v, **kwargs))
+        return _run_varlen_dense(
+            self.flash_attn_varlen_func,
+            q,
+            k,
+            v,
+            causal=kwargs.get("causal", self.causal),
+            softmax_scale=kwargs.get("softmax_scale", self.softmax_scale),
+        )
 
     def _forward_varlen_masked(
         self,
@@ -127,29 +166,14 @@ class FlashAttentionHubImpl(AttentionImpl):
         key: torch.Tensor,
         value: torch.Tensor,
     ) -> torch.Tensor:
-        batch_size, q_len = query.size()[:2]
-        k_len = key.size(1)
-        cu_seqlens_q = torch.arange(0, (batch_size + 1) * q_len, step=q_len, dtype=torch.int32, device=query.device)
-        cu_seqlens_k = torch.arange(0, (batch_size + 1) * k_len, step=k_len, dtype=torch.int32, device=query.device)
-        # b s ... -> (b s) ...
-        query = query.flatten(0, 1)
-        key = key.flatten(0, 1)
-        value = value.flatten(0, 1)
-
-        out = self.flash_attn_varlen_func(
-            q=query,
-            k=key,
-            v=value,
-            cu_seqlens_q=cu_seqlens_q,
-            cu_seqlens_k=cu_seqlens_k,
-            max_seqlen_q=q_len,
-            max_seqlen_k=k_len,
+        return _run_varlen_dense(
+            self.flash_attn_varlen_func,
+            query,
+            key,
+            value,
             causal=self.causal,
             softmax_scale=self.softmax_scale,
         )
-        out = self._unwrap_flash_output(out)
-        # (b s) h d -> b s h d
-        return out.reshape(batch_size, q_len, *out.shape[1:])
 
     def forward_cuda(
         self,
@@ -269,7 +293,16 @@ class FlashAttention3HubImpl(AttentionImpl):
         return out[0] if isinstance(out, tuple) else out
 
     def _flash_wrapper(self, q, k, v, *, attn_func, **kwargs):
-        return self._unwrap_flash_output(attn_func(q, k, v, **kwargs))
+        if attn_func is not None:
+            return self._unwrap_flash_output(attn_func(q, k, v, **kwargs))
+        return _run_varlen_dense(
+            self.flash_attn_varlen_func,
+            q,
+            k,
+            v,
+            causal=kwargs.get("causal", self.causal),
+            softmax_scale=kwargs.get("softmax_scale", self.softmax_scale),
+        )
 
     def _forward_varlen_masked(
         self,
@@ -312,29 +345,14 @@ class FlashAttention3HubImpl(AttentionImpl):
         key: torch.Tensor,
         value: torch.Tensor,
     ) -> torch.Tensor:
-        batch_size, q_len = query.size()[:2]
-        k_len = key.size(1)
-        cu_seqlens_q = torch.arange(0, (batch_size + 1) * q_len, step=q_len, dtype=torch.int32, device=query.device)
-        cu_seqlens_k = torch.arange(0, (batch_size + 1) * k_len, step=k_len, dtype=torch.int32, device=query.device)
-        # b s ... -> (b s) ...
-        query = query.flatten(0, 1)
-        key = key.flatten(0, 1)
-        value = value.flatten(0, 1)
-
-        out = self.flash_attn_varlen_func(
-            q=query,
-            k=key,
-            v=value,
-            cu_seqlens_q=cu_seqlens_q,
-            cu_seqlens_k=cu_seqlens_k,
-            max_seqlen_q=q_len,
-            max_seqlen_k=k_len,
+        return _run_varlen_dense(
+            self.flash_attn_varlen_func,
+            query,
+            key,
+            value,
             causal=self.causal,
             softmax_scale=self.softmax_scale,
         )
-        out = self._unwrap_flash_output(out)
-        # (b s) h d -> b s h d
-        return out.reshape(batch_size, q_len, *out.shape[1:])
 
     def forward_cuda(
         self,
