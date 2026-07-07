@@ -78,37 +78,27 @@ def test_kernels_hub_execution():
     # 2. Test FlashAttentionHubBackend (FlashAttention 2)
     from vllm_omni.diffusion.attention.backends.flash_attn_hub import FlashAttentionHubImpl
 
-    try:
-        fa_hub_impl = FlashAttentionHubImpl(
-            num_heads=num_heads, head_size=head_dim, softmax_scale=1.0 / (head_dim**0.5), causal=False
-        )
-        output_fa_hub = fa_hub_impl.forward(q.clone(), k.clone(), v.clone(), attn_metadata_sdpa)
-        assert output_fa_hub.shape == q.shape
-        assert not torch.isnan(output_fa_hub).any()
-        # Verify correctness against reference
-        max_diff = torch.max(torch.abs(output_ref - output_fa_hub)).item()
-        assert max_diff < 1e-2, f"FlashAttentionHub output differs too much from SDPA reference: {max_diff}"
-        print(f"✓ FlashAttentionHub PASSED, max diff: {max_diff}")
-    except Exception as e:
-        print(f"Skipping FlashAttentionHubImpl test because kernel loading failed: {e}")
+    fa_hub_impl = FlashAttentionHubImpl(
+        num_heads=num_heads, head_size=head_dim, softmax_scale=1.0 / (head_dim**0.5), causal=False
+    )
+    output_fa_hub = fa_hub_impl.forward(q.clone(), k.clone(), v.clone(), attn_metadata_sdpa)
+    assert output_fa_hub.shape == q.shape
+    assert not torch.isnan(output_fa_hub).any()
+    max_diff = torch.max(torch.abs(output_ref - output_fa_hub)).item()
+    assert max_diff < 1e-2, f"FlashAttentionHub output differs too much from SDPA reference: {max_diff}"
 
-    # 3. Test FlashAttention3HubBackend (FlashAttention 3)
-    major, minor = torch.cuda.get_device_capability()
-    if major >= 9:
-        from vllm_omni.diffusion.attention.backends.flash_attn_hub import FlashAttention3HubImpl
+    # 3. Test FlashAttention3HubBackend (FlashAttention 3, Hopper+ only)
+    major, _minor = torch.cuda.get_device_capability()
+    if major < 9:
+        pytest.skip("FLASH_ATTN_3_HUB execution requires Hopper-class GPU (compute capability >= 9.0)")
 
-        try:
-            fa3_hub_impl = FlashAttention3HubImpl(
-                num_heads=num_heads, head_size=head_dim, softmax_scale=1.0 / (head_dim**0.5), causal=False
-            )
-            output_fa3_hub = fa3_hub_impl.forward(q.clone(), k.clone(), v.clone(), attn_metadata_sdpa)
-            assert output_fa3_hub.shape == q.shape
-            assert not torch.isnan(output_fa3_hub).any()
-            # Verify correctness against reference
-            max_diff = torch.max(torch.abs(output_ref - output_fa3_hub)).item()
-            assert max_diff < 1e-2, f"FlashAttention3Hub output differs too much from SDPA reference: {max_diff}"
-            print(f"✓ FlashAttention3Hub PASSED, max diff: {max_diff}")
-        except Exception as e:
-            print(f"Skipping FlashAttention3HubImpl test because kernel loading failed: {e}")
-    else:
-        print("Skipping FlashAttention3HubImpl test because device capability is < 9.0")
+    from vllm_omni.diffusion.attention.backends.flash_attn_hub import FlashAttention3HubImpl
+
+    fa3_hub_impl = FlashAttention3HubImpl(
+        num_heads=num_heads, head_size=head_dim, softmax_scale=1.0 / (head_dim**0.5), causal=False
+    )
+    output_fa3_hub = fa3_hub_impl.forward(q.clone(), k.clone(), v.clone(), attn_metadata_sdpa)
+    assert output_fa3_hub.shape == q.shape
+    assert not torch.isnan(output_fa3_hub).any()
+    max_diff = torch.max(torch.abs(output_ref - output_fa3_hub)).item()
+    assert max_diff < 1e-2, f"FlashAttention3Hub output differs too much from SDPA reference: {max_diff}"
