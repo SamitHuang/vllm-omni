@@ -225,7 +225,7 @@ The following backend options are supported:
 To use these backends, you must install the `kernels` library:
 
 ```bash
-pip install kernels
+pip install kernels==0.14.1
 ```
 
 If the `kernels` library is not available in the environment, vLLM-Omni will log a warning and fall back gracefully to the corresponding local backend implementations (`FLASH_ATTN`).
