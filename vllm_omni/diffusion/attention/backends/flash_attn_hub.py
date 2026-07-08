@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-from functools import partial
+from functools import cache, partial
 
 import torch
 from vllm.logger import init_logger
@@ -16,6 +16,22 @@ from vllm_omni.diffusion.attention.backends.utils.piecewise_attn import (
 )
 
 logger = init_logger(__name__)
+
+
+@cache
+def _get_hub_module(repo_id: str):
+    from kernels import get_kernel
+
+    last_error = None
+    for version in (1, 2, None):
+        try:
+            kwargs = {"trust_remote_code": True}
+            if version is not None:
+                kwargs["version"] = version
+            return get_kernel(repo_id, **kwargs)
+        except Exception as exc:
+            last_error = exc
+    raise RuntimeError(f"Failed to load HuggingFace Hub kernel {repo_id!r}") from last_error
 
 
 def _run_varlen_dense(
@@ -88,23 +104,9 @@ class FlashAttentionHubImpl(AttentionImpl):
         if backend_kwargs:
             logger.warning("FlashAttentionHubImpl ignoring backend_kwargs: %s", list(backend_kwargs.keys()))
 
-        # Lazily get the kernel from the Hub to avoid network/disk overhead on import
-        from kernels import get_kernel
-
-        logger.info("Loading flash-attn2 kernel from HuggingFace Hub...")
-        try:
-            hub_module = get_kernel("kernels-community/flash-attn2", version=1)
-        except Exception as e:
-            try:
-                logger.info("Failed to load version 1, attempting version 2: %s", e)
-                hub_module = get_kernel("kernels-community/flash-attn2", version=2)
-            except Exception as e2:
-                logger.info("Failed to load version 2, attempting default: %s", e2)
-                hub_module = get_kernel("kernels-community/flash-attn2")
-
+        hub_module = _get_hub_module("kernels-community/flash-attn2")
         self.flash_attn_func = getattr(hub_module, "flash_attn_func", None)
         self.flash_attn_varlen_func = getattr(hub_module, "flash_attn_varlen_func", None)
-
         if self.flash_attn_func is None and self.flash_attn_varlen_func is None:
             raise RuntimeError("Failed to load flash-attn2 kernel from HuggingFace Hub: no functions found")
 
@@ -267,23 +269,9 @@ class FlashAttention3HubImpl(AttentionImpl):
         if backend_kwargs:
             logger.warning("FlashAttention3HubImpl ignoring backend_kwargs: %s", list(backend_kwargs.keys()))
 
-        # Lazily get the kernel from the Hub to avoid network/disk overhead on import
-        from kernels import get_kernel
-
-        logger.info("Loading flash-attn3 kernel from HuggingFace Hub...")
-        try:
-            hub_module = get_kernel("kernels-community/flash-attn3", version=1)
-        except Exception as e:
-            try:
-                logger.info("Failed to load version 1, attempting version 2: %s", e)
-                hub_module = get_kernel("kernels-community/flash-attn3", version=2)
-            except Exception as e2:
-                logger.info("Failed to load version 2, attempting default: %s", e2)
-                hub_module = get_kernel("kernels-community/flash-attn3")
-
+        hub_module = _get_hub_module("kernels-community/flash-attn3")
         self.flash_attn_func = getattr(hub_module, "flash_attn_func", None)
         self.flash_attn_varlen_func = getattr(hub_module, "flash_attn_varlen_func", None)
-
         if self.flash_attn_func is None and self.flash_attn_varlen_func is None:
             raise RuntimeError("Failed to load flash-attn3 kernel from HuggingFace Hub: no functions found")
 
