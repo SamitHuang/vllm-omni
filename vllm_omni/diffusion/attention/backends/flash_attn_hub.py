@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-from functools import cache, partial
+import threading
+from functools import partial
 
 import torch
 from vllm.logger import init_logger
@@ -18,10 +19,14 @@ from vllm_omni.diffusion.attention.backends.utils.piecewise_attn import (
 logger = init_logger(__name__)
 
 
-@cache
-def _get_hub_module(repo_id: str):
+_hub_modules: dict[str, object] = {}
+_hub_lock = threading.Lock()
+
+
+def _load_hub_module(repo_id: str):
     from kernels import get_kernel
 
+    logger.info("Loading %s kernel from HuggingFace Hub...", repo_id)
     last_error = None
     for version in (1, 2, None):
         try:
@@ -30,8 +35,16 @@ def _get_hub_module(repo_id: str):
                 kwargs["version"] = version
             return get_kernel(repo_id, **kwargs)
         except Exception as exc:
+            logger.info("Failed to load %s version %s: %s", repo_id, version, exc)
             last_error = exc
     raise RuntimeError(f"Failed to load HuggingFace Hub kernel {repo_id!r}") from last_error
+
+
+def _get_hub_module(repo_id: str):
+    with _hub_lock:
+        if repo_id not in _hub_modules:
+            _hub_modules[repo_id] = _load_hub_module(repo_id)
+        return _hub_modules[repo_id]
 
 
 def _run_varlen_dense(
