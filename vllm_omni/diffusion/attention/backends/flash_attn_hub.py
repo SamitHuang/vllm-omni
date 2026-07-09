@@ -30,10 +30,9 @@ def _load_hub_module(repo_id: str):
     last_error = None
     for version in (1, 2, None):
         try:
-            kwargs = {"trust_remote_code": True}
             if version is not None:
-                kwargs["version"] = version
-            return get_kernel(repo_id, **kwargs)
+                return get_kernel(repo_id, version=version)
+            return get_kernel(repo_id)
         except Exception as exc:
             logger.info("Failed to load %s version %s: %s", repo_id, version, exc)
             last_error = exc
