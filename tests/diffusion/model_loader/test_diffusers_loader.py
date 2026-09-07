@@ -1052,6 +1052,34 @@ def test_dlo_plan_fallback_runs_ordinary_loader(monkeypatch):
     assert loader.take_host_weight_plan() is None
 
 
+def test_dlo_mmap_plan_with_distilled_lora_falls_back_to_ordinary_loader(monkeypatch):
+    od_config = SimpleNamespace(
+        dtype=torch.float32,
+        parallel_config=SimpleNamespace(use_hsdp=False, tensor_parallel_size=1),
+        quantization_config=None,
+        enable_distributed_layerwise_offload=True,
+        dlo_use_allgather=False,
+        lora_backend=LoRABackend.DISTILL,
+        lora_path="/fake/lora.safetensors",
+        model="unused",
+    )
+    loader = DiffusersPipelineLoader(LoadConfig(), od_config)
+    model = nn.Module()
+    model.transformer = nn.Linear(2, 2, bias=False)
+    model.load_lora_weights = MagicMock()
+    calls: list[str] = []
+
+    loader._init_from_load_format = lambda *_args, **_kwargs: model  # type: ignore[method-assign]
+    loader.load_weights = lambda _model: calls.append("load")  # type: ignore[method-assign]
+    loader._process_weights_after_loading = lambda *_args: calls.append("process")  # type: ignore[method-assign]
+    loader._apply_skip_softmax_calibration = lambda _model: None  # type: ignore[method-assign]
+
+    assert loader.load_model(load_device="cpu") is model
+    assert calls == ["load", "process"]
+    assert model.load_lora_weights.call_count == 1
+    assert loader.take_host_weight_plan() is None
+
+
 def test_dlo_allgather_online_fp8_uses_ordinary_loader(monkeypatch):
     from vllm.model_executor.layers.quantization.online.fp8 import (
         Fp8PerTensorOnlineLinearMethod,

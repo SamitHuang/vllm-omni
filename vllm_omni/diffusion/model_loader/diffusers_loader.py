@@ -754,6 +754,10 @@ class DiffusersPipelineLoader(HWRLoaderMixin):
                 if hwr_active and hwr_state is not None:
                     self.host_weight_plan = cast(HostWeightPlan | None, hwr_state.get("plan"))
                 if dit_distributed_offload and not hwr_active and not self._force_canonical_load:
+                    lora_backend = getattr(self.od_config, "lora_backend", None)
+                    has_distilled_lora = lora_backend in (LoRABackend.DISTILL, "distill") and bool(
+                        getattr(self.od_config, "lora_path", None)
+                    )
                     plan_result = build_checkpoint_mmap_plan(
                         model,
                         dit_modules=tuple(zip(modules.dit_names, modules.dits)),
@@ -762,6 +766,7 @@ class DiffusersPipelineLoader(HWRLoaderMixin):
                         tensor_parallel_size=tensor_parallel_size,
                         use_hsdp=use_hsdp,
                         online_quantization=any(self._has_online_quant(dit) for dit in modules.dits),
+                        has_distilled_lora=has_distilled_lora,
                     )
                     self.host_weight_plan = plan_result.plan
 
