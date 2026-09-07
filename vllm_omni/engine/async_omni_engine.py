@@ -1934,7 +1934,7 @@ class AsyncOmniEngine:
             tokens generated before abort (empty for diffusion / no OP state).
         """
         if not request_ids or getattr(self, "_shutdown_called", False):
-            return []
+            return
         if self.request_queue is None:
             raise RuntimeError("request_queue is not initialized")
         transport = self._correlated_rpc_client
@@ -1961,7 +1961,7 @@ class AsyncOmniEngine:
             result_msg = await loop.run_in_executor(None, _wait)
         except Exception as exc:
             if getattr(self, "_shutdown_called", False) and is_abort_transport_shutdown(exc):
-                return []
+                return
             raise
         if not result_msg.success:
             raise RuntimeError(result_msg.error or "abort failed")
