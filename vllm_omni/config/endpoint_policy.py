@@ -10,14 +10,7 @@ from typing import NamedTuple
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.routing import Route
-
-try:
-    from vllm.entrypoints.serve import create_error_response
-except ImportError:
-    try:
-        from vllm.entrypoints.serve.exception_handling.error_response import create_error_response
-    except ImportError:
-        from vllm.entrypoints.serve.utils.error_response import create_error_response
+from vllm.entrypoints.serve.exception_handling.error_response import create_error_response
 
 
 class RouteTarget(NamedTuple):
