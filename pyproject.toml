@@ -128,7 +128,7 @@ fa4 = [
 docs = [
     "mkdocs>=1.5.0",
     "mkdocs-api-autonav",
-    "mkdocs-material<9.6.0",
+    "mkdocs-material",
     "mkdocstrings-python",
     "mkdocs-gen-files",
     "mkdocs-awesome-nav",
