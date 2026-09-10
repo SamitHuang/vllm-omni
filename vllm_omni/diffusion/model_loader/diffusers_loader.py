@@ -583,7 +583,7 @@ class DiffusersPipelineLoader(HWRLoaderMixin):
 
             if is_cpu_backend:
                 if rank == src_rank:
-                    flat_cpu = torch.cat([t.reshape(-1) for t in bucket])
+                    flat_cpu = torch.cat([t.detach().to("cpu").reshape(-1) for t in bucket])
                 else:
                     flat_cpu = torch.empty(tot_numel, dtype=dtype)
                 torch.distributed.broadcast(flat_cpu, src=src_rank)
@@ -596,7 +596,7 @@ class DiffusersPipelineLoader(HWRLoaderMixin):
                 del flat_cpu
             else:
                 if rank == src_rank:
-                    flat_cpu = torch.cat([t.reshape(-1) for t in bucket])
+                    flat_cpu = torch.cat([t.detach().to("cpu").reshape(-1) for t in bucket])
                     dev_flat = flat_cpu.to(target_device, non_blocking=False)
                     del flat_cpu
                     torch.distributed.broadcast(dev_flat, src=src_rank)
@@ -1207,7 +1207,17 @@ class DiffusersPipelineLoader(HWRLoaderMixin):
             world_size = torch.distributed.get_world_size()
             rank = torch.distributed.get_rank()
 
+        has_online_quant = self._has_online_quant(model) or (
+            self.quant_config is not None and not getattr(self.quant_config, "is_checkpoint_quantized", False)
+        )
         enable_broadcast = bool(getattr(self.od_config, "enable_broadcast_weight_load", False)) and world_size > 1
+
+        if enable_broadcast and has_online_quant:
+            logger.info(
+                "Worker %d: Online quantization detected; falling back to ordinary per-rank weight loading for HSDP",
+                rank,
+            )
+            enable_broadcast = False
 
         if enable_broadcast:
             if rank == 0:

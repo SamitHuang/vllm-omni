@@ -2,12 +2,6 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 """Reduce browser search-index memory for generated API reference pages."""
 
-import os
-
-# Suppress MkDocs 2.0 migration warnings from mkdocs-material and plugins
-os.environ["NO_MKDOCS_2_WARNING"] = "true"
-os.environ["DISABLE_MKDOCS_2_WARNING"] = "true"
-
 from material.plugins.search.plugin import SearchIndex
 
 _add_entry_from_context = SearchIndex.add_entry_from_context
