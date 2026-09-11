@@ -15,7 +15,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 import torch
 import torch.nn as nn
-from huggingface_hub import snapshot_download
 from safetensors.torch import save_file
 from vllm.config.load import LoadConfig
 
@@ -34,6 +33,7 @@ from vllm_omni.diffusion.models.helios import HeliosPipeline
 from vllm_omni.diffusion.models.host_weight_contract import FinalLayoutModelContract
 from vllm_omni.diffusion.registry import initialize_model
 from vllm_omni.quantization.component_config import ComponentQuantizationConfig
+from vllm_omni.transformers_utils.repo_utils import hf_api
 
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.cpu]
 
@@ -43,7 +43,7 @@ model_path = "hf-internal-testing/tiny-helios-modular-pipe"
 @pytest.fixture(scope="module")
 def prefetch_helios_model():
     """Downloads the tiny helios model prior to running a test."""
-    snapshot_download(model_path)
+    hf_api().snapshot_download(model_path)
 
 
 @pytest.fixture(scope="function")
