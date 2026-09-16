@@ -213,6 +213,15 @@ Record the server commit, model/adapter, input assets, prompt, settings, and out
 alongside the result. Local schema or mocked-server checks do not establish H3
 generation quality or replace this real-model validation.
 
+### MiniMax H3 Text to Video
+
+Import [the H3 text-to-video template](example_workflows/MiniMax_H3_Text_to_Video.json)
+for remote video generation with audio. It includes connected base presets and
+optional Turbo sampling, H3 parameters, and Remote LoRA nodes. See the
+[workflow guide](docs/minimax-h3-t2v.md) for server setup, artifact-specific Turbo
+settings, and saved-video/audio validation. Set Remote LoRA’s `local_path` to
+the downloaded Turbo artifact on your server before enabling Turbo.
+
 #### H3 video upscale (WF-07)
 
 The **vLLM-Omni MiniMax H3 Video Upscale** template generates video remotely, upscales it with SeedVR2, and saves the original and upscaled videos with the generated audio and FPS. See [workflow setup](docs/wf07-h3-upscale.md).
