@@ -71,7 +71,6 @@ from vllm_omni.engine.duplex.plugin import (
     DuplexModelPlugin,
     DuplexModelSessionState,
     PcmAppendReservation,
-    payload_turn_id,
 )
 from vllm_omni.engine.duplex.realtime_events import (
     RealtimeProjectionState,
@@ -251,7 +250,8 @@ class DuplexSessionRunner:
         if stage_id < context.final_stage_id:
             decision = self.model.decide_output(stage_id, output, context)
         consume = decision is not None or stage_id >= context.final_stage_id
-        if not consume:
+        project_intermediate = self.plugin.projects_intermediate_outputs and stage_id == 0
+        if not consume and not project_intermediate:
             # Stage0 text without a direct decision feeds the TTS stage as before.
             # Its metrics still have to reach the client: before sessions moved
             # into the engine the orchestrator published them as a standalone
@@ -274,7 +274,7 @@ class DuplexSessionRunner:
                 decision=decision,
             )
         )
-        return True
+        return consume
 
     def on_stage_failure(self, stage_id: int, exc: BaseException) -> None:
         """A stage rejected this session's request: fail the active response now.
@@ -434,12 +434,11 @@ class DuplexSessionRunner:
             worker.cancel()
             await asyncio.gather(worker, return_exceptions=True)
 
-    def spawn(self, coro: Awaitable[None], *, name: str) -> asyncio.Task[None]:
+    def spawn(self, coro: Awaitable[None], *, name: str) -> None:
         task = asyncio.ensure_future(coro)
         task.set_name(name)
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
-        return task
 
     async def offload(self, fn: Callable[..., _OffloadT], *args: object, **kwargs: object) -> _OffloadT:
         loop = self._loop or asyncio.get_running_loop()
@@ -539,14 +538,14 @@ class DuplexSessionRunner:
         elif isinstance(command, ClearInput):
             self._on_clear_input()
         elif isinstance(command, CancelResponse):
-            resolved = resolve_cancel_response(projector, command)
-            self._emit_events(resolved.events)
-            for payload in resolved.payloads:
+            control = resolve_cancel_response(projector, command)
+            self._emit_events(control.events)
+            for payload in control.payloads:
                 await self._on_cancel(payload)
         elif isinstance(command, ClearOutputAudio):
-            resolved = resolve_clear_output_audio(projector, command)
-            self._emit_events(resolved.events)
-            for payload in resolved.payloads:
+            control = resolve_clear_output_audio(projector, command)
+            self._emit_events(control.events)
+            for payload in control.payloads:
                 await self._on_cancel(payload)
         elif isinstance(command, CancelInput | BargeIn):
             await self._on_cancel(command.payload())
@@ -564,7 +563,8 @@ class DuplexSessionRunner:
                 return
             payload = command.payload()
             if command.event in _CANCEL_EVENTS:
-                normalized = dict(payload.get("payload") or {})
+                inner = payload.get("payload")
+                normalized: dict[str, object] = dict(inner) if isinstance(inner, Mapping) else {}
                 normalized.update(payload)
                 normalized["type"] = command.event
                 await self._on_cancel(normalized)
@@ -577,19 +577,19 @@ class DuplexSessionRunner:
         elif isinstance(command, Heartbeat):
             self._on_heartbeat(command)
         elif isinstance(command, CreateItem):
-            resolved = resolve_create_item(projector, command)
-            self._emit_events(resolved.events)
-            for payload in resolved.payloads:
+            control = resolve_create_item(projector, command)
+            self._emit_events(control.events)
+            for payload in control.payloads:
                 await self._run_internal_payload(payload)
         elif isinstance(command, DeleteItem):
-            resolved = resolve_delete_item(projector, command)
-            self._emit_events(resolved.events)
-            for payload in resolved.payloads:
+            control = resolve_delete_item(projector, command)
+            self._emit_events(control.events)
+            for payload in control.payloads:
                 await self.control.on_turn_signal(payload)
         elif isinstance(command, TruncateItem):
-            resolved = resolve_truncate_item(projector, command)
-            self._emit_events(resolved.events)
-            for payload in resolved.payloads:
+            control = resolve_truncate_item(projector, command)
+            self._emit_events(control.events)
+            for payload in control.payloads:
                 await self._run_internal_payload(payload)
         elif isinstance(command, CloseSession):
             await self._on_close_command(command.reason)
@@ -776,7 +776,7 @@ class DuplexSessionRunner:
         sr_raw = event.get("sample_rate_hz") or event.get("sample_rate")
         sample_rate_hz = sr_raw if isinstance(sr_raw, int | float) else 16000
         try:
-            audio, fmt, sample_rate_hz = await self.offload(
+            converted: tuple[object, object, int | float | None] = await self.offload(
                 convert_input_audio_with_rate,
                 audio,
                 fmt,
@@ -785,13 +785,25 @@ class DuplexSessionRunner:
         except ValueError as exc:
             self._emit_error("bad_event", str(exc))
             return
+        audio, fmt, converted_rate = converted
+        if converted_rate is not None:
+            sample_rate_hz = converted_rate
         if isinstance(fmt, str) and fmt.lower() in {"pcm16", "pcm_s16le", "s16le"}:
             self._emit_error("bad_audio", "input_audio_buffer.append pcm16 audio could not be decoded")
             return
         event["audio"] = audio
         event["format"] = fmt
         event["sample_rate_hz"] = sample_rate_hz
+        client_force_listen = bool(event.get("force_listen", False))
         vad_result = await self.control.run_turn_detection(event)
+        if (
+            vad_result is not None
+            and not session.capabilities.supports_core_resumable_request
+            and not client_force_listen
+        ):
+            # VAD's force_listen hint controls native model decoding. Committed
+            # turn models already buffer speech; it must not suppress barge-in.
+            event.pop("force_listen", None)
         projector = self._require_projector()
         self._emit_events(note_input_append(projector, event, vad_result=vad_result))
         if self.run.closing or session.state != DuplexSessionState.OPEN:
@@ -896,8 +908,11 @@ class DuplexSessionRunner:
             return
         if pcm_reservation.byte_count == 0:
             session.release_input_bytes(raw_audio_bytes)
-        payload = pcm_reservation.payload
-        await self._start_append(payload, final=False, pcm_reservation=pcm_reservation)
+        append_payload = pcm_reservation.payload
+        if append_payload is None:
+            self._maybe_schedule_vad_commit(vad_result)
+            return
+        await self._start_append(append_payload, final=False, pcm_reservation=pcm_reservation)
         self._maybe_schedule_vad_commit(vad_result)
 
     def _maybe_schedule_vad_commit(self, vad_result: TurnDetectionResult | None) -> None:
@@ -968,10 +983,13 @@ class DuplexSessionRunner:
 
                 on_append_accepted = _reanchor_chain
         append_epoch = session.epoch
-        append_turn_id = payload_turn_id(payload)
-        if append_turn_id is None:
-            append_turn_id = session.turn_id
-        request_id = helpers.stage0_request_id(self.session, append_epoch)
+        append_fence = helpers.append_fence(session, payload, epoch=append_epoch)
+        append_turn_id = append_fence.turn_id
+        request_id = self.ctx.manager.stage_request_id(
+            append_fence,
+            stage_id=0,
+            resumable=session.capabilities.supports_core_resumable_request,
+        )
         if final or precreate_response:
             session.bind_request(request_id)
         if precreate_response:
@@ -979,6 +997,14 @@ class DuplexSessionRunner:
         if precreate_response and session.active_response_id is None:
             response_id = session.begin_response(turn_id=append_turn_id)
             self.emit(self.model.response_created_payload(response_id, epoch=append_epoch))
+        if final and not session.capabilities.supports_core_resumable_request:
+            logger.info(
+                "Duplex committed turn session=%s request=%s response=%s audio_bytes=%s",
+                session.session_id,
+                request_id,
+                session.active_response_id,
+                helpers.audio_payload_size_bytes(payload),
+            )
         attempt = AppendAttempt(
             ctx=self.ctx,
             out=self.out,
@@ -1034,8 +1060,7 @@ class DuplexSessionRunner:
         try:
             return await predecessor
         except asyncio.CancelledError:
-            current = asyncio.current_task()
-            if current is not None and current.cancelling():
+            if helpers.task_is_cancelling(asyncio.current_task()):
                 raise
             return False
         except Exception:
@@ -1063,8 +1088,7 @@ class DuplexSessionRunner:
                 if not await pending_silence:
                     return False
             except asyncio.CancelledError:
-                current = asyncio.current_task()
-                if current is not None and current.cancelling():
+                if helpers.task_is_cancelling(asyncio.current_task()):
                     raise
                 return False
             except Exception:
@@ -1523,6 +1547,10 @@ class DuplexSessionRunner:
                 retained_committed_payload=committed_payload,
             )
             return
+        if session.unanswered_user_items() and session.capabilities.supports_text_only_turn:
+            session.reset_unanswered_user_items()
+            await self._start_append({"type": "conversation"}, final=True, precreate_response=True)
+            return
         if session.unanswered_user_items():
             # Conversation items are context, not a turn. A model-native model
             # decides to speak from the audio it hears, and there is no audio
@@ -1601,13 +1629,16 @@ class DuplexSessionRunner:
         if deferred_payload is None:
             commit_reservation.commit()
             return False
+        retained_payload: dict[str, object]
         if model_state.committed_audio_payload is not None:
-            deferred_payload = overlap_policy.merge_audio_payloads(
+            retained_payload = overlap_policy.merge_audio_payloads(
                 model_state.committed_audio_payload,
                 deferred_payload,
             )
+        else:
+            retained_payload = deferred_payload
         model_state.retain_committed_audio(
-            deferred_payload,
+            retained_payload,
             operation_id=commit_reservation.operation_id,
             reserved_bytes=commit_reservation.byte_count,
         )

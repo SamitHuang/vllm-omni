@@ -110,8 +110,7 @@ class AppendAttempt:
             try:
                 predecessor_ok = await predecessor
             except asyncio.CancelledError:
-                current = asyncio.current_task()
-                if current is not None and current.cancelling():
+                if helpers.task_is_cancelling(asyncio.current_task()):
                     raise
                 predecessor_ok = False
             except Exception:
@@ -159,8 +158,10 @@ class AppendAttempt:
                 self.ctx.run.runtime_closed = True
                 return False
             if not emitted_response and session.epoch == self.epoch:
-                if session.active_request_id == helpers.stage0_request_id(session, self.epoch):
-                    session.clear_request(self.request_id)
+                # Only if the session still points at this append's request:
+                # ``clear_request`` compares before it clears, and the id
+                # carries a turn suffix when the core request is not resumable.
+                session.clear_request(self.request_id)
                 if self.final:
                     self.out.emit_events([session.signal_turn(DuplexTurnEventType.USER_STARTED.value)])
             return append_ok
