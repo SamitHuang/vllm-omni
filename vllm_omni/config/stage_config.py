@@ -309,10 +309,8 @@ class PipelineConfig:
     diffusers_class_name: str | None = None
     diffusers_class_aliases: tuple[str, ...] = ()
     endpoint_restrictions: tuple[EndpointRestriction, ...] = ()
-    # Dotted path of the model's ``DuplexModelPlugin``. A pipeline is a duplex
-    # model iff this is set: ``vllm-omni serve`` then always runs it through
-    # ``DuplexOmni`` (every served surface runs on a duplex session) and the engine hosts one
-    # ``DuplexOrchestrator`` with the plugin loaded.
+    # Dotted path of the model's ``DuplexModelPlugin``. Online serving uses
+    # DuplexOmni only when the deploy configuration selects session_mode: duplex.
     duplex_plugin: str | None = None
     # Legacy duplex wiring of the models that are not ported to the plugin
     # framework yet (PersonaPlex, Nemotron VoiceChat). Nothing reads them: a
