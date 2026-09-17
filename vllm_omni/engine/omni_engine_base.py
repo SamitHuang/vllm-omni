@@ -272,7 +272,14 @@ class OmniEngineBase:
 
         self.num_stages = len(self.stage_configs)
         self.async_chunk = any(
-            bool(getattr(getattr(stage, "engine_args", None), "async_chunk", False)) for stage in self.stage_configs
+            bool(
+                getattr(
+                    getattr(stage, "connector_config", None),
+                    "async_chunk",
+                    getattr(getattr(stage, "engine_args", None), "async_chunk", False),
+                )
+            )
+            for stage in self.stage_configs
         )
         self.stage_pools: list[StagePool] = []
         self.stage_clients: list[StageClient] = []  # logical-stage view for external readers
