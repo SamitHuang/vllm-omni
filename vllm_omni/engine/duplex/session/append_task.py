@@ -53,8 +53,11 @@ class AppendAttempt:
     retained_committed_payload: dict[str, object] | None
     #: Response reserved before submission, to be failed if submission does not happen.
     precreated_response_id: str | None
+    #: Commits timing state once the runtime accepts the append (before any
+    #: returned output event can clear the continuation chain).
+    on_append_accepted: Callable[[float], None] | None = None
     #: Last chance to call the append off, checked once the predecessor is done.
-    before_append: Callable[[], bool] | None
+    before_append: Callable[[], bool] | None = None
 
     # ------------------------------------------------------------------ #
     # Compensation                                                       #
@@ -140,6 +143,7 @@ class AppendAttempt:
                 ),
                 final=self.final,
                 expected_epoch=self.epoch,
+                on_append_accepted=self.on_append_accepted,
             )
             if append_ok:
                 model_state.context_locked = True
