@@ -32,6 +32,7 @@ from vllm_omni.diffusion.distributed.sp_plan import (
     SequenceParallelOutput,
 )
 from vllm_omni.diffusion.forward_context import get_forward_context, is_forward_context_available
+from vllm_omni.diffusion.models.qwen_image_21.decode_graph import QwenImage21DecodeGraphManager
 
 if TYPE_CHECKING:
     from vllm.model_executor.layers.quantization.base_config import QuantizationConfig
@@ -716,6 +717,8 @@ class QwenImage21Transformer2DModel(CachedTransformer):
         causal_block: bool = True,
         quant_config: QuantizationConfig | None = None,
         prefix: str = "transformer",
+        enable_cuda_graph_decode: bool | None = None,
+        cuda_graph_max_decode_graphs: int = 8,
     ):
         super().__init__()
         self.parallel_config = od_config.parallel_config
@@ -785,6 +788,17 @@ class QwenImage21Transformer2DModel(CachedTransformer):
 
         # Module boundary where _sp_plan shards the target tokens + their RoPE freqs.
         self.sequence_prepare = QwenImage21SequencePrepare(self.img_in, self.pos_embed)
+
+        # Opt-in CUDA Graph capture of the fixed-shape KV-cache decode steps.
+        # Default off: ``None`` defers to ``od_config.enable_cuda_graph_decode``.
+        if enable_cuda_graph_decode is None:
+            enable_cuda_graph_decode = bool(getattr(od_config, "enable_cuda_graph_decode", False))
+        self.enable_cuda_graph_decode = enable_cuda_graph_decode
+        self._decode_graph_manager = (
+            QwenImage21DecodeGraphManager(self, max_entries=cuda_graph_max_decode_graphs)
+            if enable_cuda_graph_decode
+            else None
+        )
 
     @staticmethod
     def build_token_metadata(
@@ -951,6 +965,19 @@ class QwenImage21Transformer2DModel(CachedTransformer):
 
         is_decode = kv_cache is not None and len(kv_cache) > 0 and "key" in kv_cache[0].get(cache_branch, {})
 
+        if is_decode and self._decode_graph_manager is not None:
+            graph_output = self._decode_graph_manager.try_decode(
+                hidden_states=hidden_states,
+                timestep=timestep,
+                kv_cache=kv_cache,
+                cache_branch=cache_branch,
+                target_tokens=math.prod(layout[-1]),
+            )
+            if graph_output is not None:
+                if not return_dict:
+                    return (graph_output,)
+                return Transformer2DModelOutput(sample=graph_output)
+
         if is_decode:
             txt_hidden_states = None
         else:
@@ -1048,6 +1075,24 @@ class QwenImage21Transformer2DModel(CachedTransformer):
                 cache_write_len=cache_write_len,
             )
 
+        if (
+            not is_decode
+            and cache_write_len is not None
+            and kv_cache is not None
+            and self._decode_graph_manager is not None
+        ):
+            # Move the freshly written prefix K/V into fixed-address buffers so
+            # decode steps can replay a captured CUDA graph against them.
+            self._decode_graph_manager.register_prefill(
+                kv_cache=kv_cache,
+                cache_branch=cache_branch,
+                prefix_len=cache_write_len,
+                target_tokens=target_freqs.shape[0],
+                target_freqs=target_freqs,
+                joint_key_valid=joint_key_valid,
+                dtype=hidden_states.dtype,
+            )
+
         if sp_active and not is_decode:
             # Only target tokens feed proj_out under SP: the prefix is replicated on every
             # rank and gathering it would duplicate it. Output is the (gathered) target image.
@@ -1062,6 +1107,39 @@ class QwenImage21Transformer2DModel(CachedTransformer):
             return (output,)
 
         return Transformer2DModelOutput(sample=output)
+
+    def _decode_graph_forward(self, entry) -> torch.Tensor:
+        """The exact decode-step computation, captured into a CUDA graph.
+
+        Mirrors the eager decode path of ``forward``: target tokens only,
+        prefix K/V read from the entry's static buffers, no attention metadata
+        (the registration gate excludes padded masks), and an all-ones
+        modulation mask. All inputs live in the entry's fixed-address buffers.
+        """
+        hidden_states = self.img_in(entry.hidden)
+        timestep = torch.cat([entry.timestep, entry.timestep.new_zeros(1)], dim=0)
+        temb = self.time_text_embed(timestep, hidden_states)
+        modulation = self.modulation(temb)
+        for index_block, block in enumerate(self.transformer_blocks):
+            hidden_states = block(
+                hidden_states=hidden_states,
+                modulation=modulation,
+                freqs=entry.freqs,
+                target_token_mask=entry.target_token_mask,
+                attn_metadata=entry.attn_metadata,
+                sp_prefix_len=0,
+                sp_decode=False,
+                kv_cache=entry.block_caches[index_block],
+                cache_branch=entry.branch,
+                cache_write_len=None,
+            )
+        hidden_states = self.norm_out(hidden_states, temb, entry.target_token_mask)
+        return self.proj_out(hidden_states)
+
+    def release_captured_graphs(self) -> None:
+        """Drop captured decode graphs and their static buffers (e.g. sleep mode)."""
+        if self._decode_graph_manager is not None:
+            self._decode_graph_manager.clear()
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         stacked_params_mapping = [
