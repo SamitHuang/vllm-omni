@@ -455,8 +455,9 @@ class QwenImage21Attention(nn.Module):
             branch_cache = kv_cache.setdefault(cache_branch, {})
             if cache_write_len is not None:
                 # Prefill: cache the timestep-independent prefix K/V for later denoising steps.
-                branch_cache["key"] = key[:, :cache_write_len].contiguous()
-                branch_cache["value"] = value[:, :cache_write_len].contiguous()
+                # Own the prefix storage instead of retaining the full prefill tensors.
+                branch_cache["key"] = key[:, :cache_write_len].clone()
+                branch_cache["value"] = value[:, :cache_write_len].clone()
             else:
                 cached_key = branch_cache["key"]
                 cached_value = branch_cache["value"]

@@ -6,7 +6,6 @@ import copy
 import json
 import logging
 import os
-import random
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -319,7 +318,7 @@ class QwenImage21Pipeline(
         # The prompt is built as a raw template string and passed straight to
         # `self.processor(text=..., images=...)`, rather than going through
         # `apply_chat_template`: the two tokenize differently and the checkpoint
-        # expects this one. The "Picture 1: ..." vision prefix only appears in
+        # expects this one. The "<image1>..." vision prefix only appears in
         # the image-conditioned template.
         self.prompt_template_t2i = (
             f"<|im_start|>system\n{self.sys_prompt}<|im_end|>\n"
@@ -328,10 +327,9 @@ class QwenImage21Pipeline(
         )
         self.prompt_template_ti2i = (
             f"<|im_start|>system\n{self.sys_prompt}<|im_end|>\n"
-            f"<|im_start|>user\nPicture 1: <|vision_start|><|image_pad|><|vision_end|>{{}}<|im_end|>\n"
+            f"<|im_start|>user\n<image1><|vision_start|><|image_pad|><|vision_end|>{{}}<|im_end|>\n"
             f"<|im_start|>assistant\n"
         )
-        self.ref_token_list = ["Picture ", "Image ", "图 ", "图片 "]
         # Number of leading system-role tokens to drop from the hidden states.
         # Derived from the tokenized system message rather than hardcoded, so it
         # tracks the processor's template.
@@ -470,6 +468,7 @@ class QwenImage21Pipeline(
         """
         dtype = self.text_encoder.dtype
         prompt = [prompt] if isinstance(prompt, str) else prompt
+        prompt = [" " if not p else p for p in prompt]
 
         has_images = images_per_prompt is not None and any(images_per_prompt)
         if not has_images:
@@ -488,15 +487,21 @@ class QwenImage21Pipeline(
                     txt.append(self.prompt_template_t2i.format(t))
                     continue
                 n_imgs = len(images)
-                replace = "Picture 1: <|vision_start|><|image_pad|><|vision_end|>"
+                replace = "<image1><|vision_start|><|image_pad|><|vision_end|>"
                 for i in range(2, n_imgs + 1):
-                    replace += f" Picture {i}: <|vision_start|><|image_pad|><|vision_end|>"
+                    replace += f" <image{i}><|vision_start|><|image_pad|><|vision_end|>"
                 template = self.prompt_template_ti2i.replace(
-                    "Picture 1: <|vision_start|><|image_pad|><|vision_end|>",
-                    replace.replace("Picture ", random.choice(self.ref_token_list)),
+                    "<image1><|vision_start|><|image_pad|><|vision_end|>", replace
                 )
                 txt.append(template.format(t))
-            condition_pil_list = [img for images in condition_pil_per_prompt for img in images]
+            condition_pil_list = []
+            for images in condition_pil_per_prompt:
+                for img in images:
+                    if img.mode == "RGBA":
+                        white = PIL.Image.new("RGB", img.size, (255, 255, 255))
+                        white.paste(img, mask=img.getchannel("A"))
+                        img = white
+                    condition_pil_list.append(img)
 
         # Validate only the user prompt contribution against the text budget;
         # image placeholder expansion happens later inside the processor.
@@ -521,7 +526,12 @@ class QwenImage21Pipeline(
             error_context="after applying the Qwen-Image 2.1 prompt template",
         )
 
-        processor_kwargs: dict[str, Any] = {"text": txt, "padding": True, "return_tensors": "pt"}
+        processor_kwargs: dict[str, Any] = {
+            "text": txt,
+            "padding": True,
+            "padding_side": "left",
+            "return_tensors": "pt",
+        }
         if has_images:
             processor_kwargs["images"] = condition_pil_list
         model_inputs = self.processor(**processor_kwargs).to(self.device)
@@ -976,7 +986,9 @@ class QwenImage21Pipeline(
         )
         generator = req.collate_request_generators(num_images_per_prompt, None)
         latents = req.collate_request_tensors("latents", None)
-        true_cfg_scale = common_sampling_params.true_cfg_scale or 4.0
+        true_cfg_scale = (
+            common_sampling_params.true_cfg_scale if common_sampling_params.true_cfg_scale is not None else 4.0
+        )
         output_type = common_sampling_params.output_type or "pil"
 
         # Batch homogeneity decides the attention path: a homogeneous batch
@@ -1062,7 +1074,7 @@ class QwenImage21Pipeline(
             sigmas=sampling.sigmas,
             num_images_per_prompt=num_images_per_prompt,
             generator=sampling.generator,
-            true_cfg_scale=sampling.true_cfg_scale or 4.0,
+            true_cfg_scale=sampling.true_cfg_scale if sampling.true_cfg_scale is not None else 4.0,
             max_sequence_length=sampling.max_sequence_length or self._max_length,
             per_request_images=per_request_images,
             attention_kwargs=kwargs.get("attention_kwargs"),

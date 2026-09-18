@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 
 """
 Example script for image-conditioned generation with Qwen-Image 2.1.
@@ -168,7 +168,7 @@ def main():
     for image_path in args.image:
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"Input image not found: {image_path}")
-        input_images.append(Image.open(image_path).convert("RGB"))
+        input_images.append(Image.open(image_path).convert("RGBA"))
 
     # Use single image or list based on number of inputs
     input_image = input_images[0] if len(input_images) == 1 else input_images
@@ -198,10 +198,7 @@ def main():
         print(f"  Number of input images: {len(input_image)}")
     else:
         print(f"  Input image size: {input_image.size}")
-    print(
-        f"  Parallel configuration: ulysses_degree={args.ulysses_degree}, "
-        f"cfg_parallel_size={args.cfg_parallel_size}"
-    )
+    print(f"  Parallel configuration: ulysses_degree={args.ulysses_degree}, cfg_parallel_size={args.cfg_parallel_size}")
     print(f"{'=' * 60}\n")
 
     generation_start = time.perf_counter()
