@@ -15,6 +15,7 @@ from vllm_omni.diffusion.distributed.autoencoders.distributed_vae_executor impor
 )
 from vllm_omni.diffusion.models.qwen_image_21.autoencoder_kl_qwenimage21 import (
     AutoencoderKLQwenImage21,
+    _cudnn_deterministic,
     _unpatchify,
 )
 
@@ -89,11 +90,12 @@ class DistributedAutoencoderKLQwenImage21(AutoencoderKLQwenImage21, DistributedV
         """Decode a single latent tile into RGB space."""
         self.clear_cache()
         time = []
-        for k in range(len(task.tensor)):
-            self._conv_idx = [0]
-            tile = self.post_quant_conv(task.tensor[k])
-            decoded = self.decoder(tile, feat_cache=self._feat_map, feat_idx=self._conv_idx, first_chunk=(k == 0))
-            time.append(decoded)
+        with _cudnn_deterministic():
+            for k in range(len(task.tensor)):
+                self._conv_idx = [0]
+                tile = self.post_quant_conv(task.tensor[k])
+                decoded = self.decoder(tile, feat_cache=self._feat_map, feat_idx=self._conv_idx, first_chunk=(k == 0))
+                time.append(decoded)
         result = torch.cat(time, dim=2)
         return result
 

@@ -145,6 +145,11 @@ def parse_args() -> argparse.Namespace:
         help="Number of GPUs used for classifier free guidance parallel size.",
     )
     parser.add_argument(
+        "--vae-use-tiling",
+        action="store_true",
+        help="Enable VAE tiling for memory optimization (also tiles condition-image encoding).",
+    )
+    parser.add_argument(
         "--enforce-eager",
         action="store_true",
         default=None,
@@ -174,6 +179,7 @@ def main():
         "model": args.model,
         "ulysses_degree": args.ulysses_degree,
         "cfg_parallel_size": args.cfg_parallel_size,
+        "vae_use_tiling": args.vae_use_tiling,
     }
     if args.enforce_eager is not None:
         omni_kwargs["enforce_eager"] = args.enforce_eager

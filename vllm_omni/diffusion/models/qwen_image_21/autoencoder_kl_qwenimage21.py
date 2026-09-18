@@ -15,6 +15,9 @@
 # Copied from diffusers to avoid version coupling.
 
 
+import functools
+from contextlib import contextmanager
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -30,6 +33,32 @@ from diffusers.utils.accelerate_utils import apply_forward_hook
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 CACHE_T = 2
+
+
+@contextmanager
+def _cudnn_deterministic():
+    """Scope cuDNN to deterministic conv algorithms, restoring on exit.
+
+    VAE decode/encode runs many odd-shaped conv3d shapes; under GPU memory
+    pressure cuDNN may fall back to workspace-limited or non-deterministic
+    algorithms, which makes tiled decode results vary run-to-run on shared
+    GPUs. Pinning deterministic algorithms removes that source of variance.
+    """
+    previous = torch.backends.cudnn.deterministic
+    torch.backends.cudnn.deterministic = True
+    try:
+        yield
+    finally:
+        torch.backends.cudnn.deterministic = previous
+
+
+def _with_cudnn_deterministic(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        with _cudnn_deterministic():
+            return fn(*args, **kwargs)
+
+    return wrapper
 
 
 class QwenImage21AvgDown3D(nn.Module):
@@ -1150,7 +1179,17 @@ class AutoencoderKLQwenImage21(ModelMixin, AutoencoderMixin, ConfigMixin, FromOr
             is_residual=is_residual,
         )
 
-        self.spatial_compression_ratio = scale_factor_spatial
+        # Derive the spatial compression ratio from the architecture: one
+        # downsampling stage per `temperal_downsample` entry. The checkpoint's
+        # `scale_factor_spatial` (8) under-reports it — with
+        # `dim_mult=[1, 2, 4, 8, 8]` there are four 2x stages, i.e. 16x — and a
+        # wrong ratio corrupts tiled decode/encode geometry.
+        self.spatial_compression_ratio = 2 ** len(temperal_downsample)
+        if scale_factor_spatial is not None and scale_factor_spatial != self.spatial_compression_ratio:
+            logger.warning(
+                f"VAE config scale_factor_spatial={scale_factor_spatial} does not match the architecture's "
+                f"spatial compression ratio {self.spatial_compression_ratio}; using the architecture-derived value."
+            )
 
         # When decoding a batch of video latents at a time, one can save memory by slicing across the batch dimension
         # to perform decoding of a single video latent at a time.
@@ -1161,13 +1200,19 @@ class AutoencoderKLQwenImage21(ModelMixin, AutoencoderMixin, ConfigMixin, FromOr
         # intermediate tiles together, the memory requirement can be lowered.
         self.use_tiling = False
 
-        # The minimal tile height and width for spatial tiling to be used
-        self.tile_sample_min_height = 256
-        self.tile_sample_min_width = 256
+        # The minimal tile height and width for spatial tiling to be used.
+        # Sized for the architecture-derived 16x compression ratio: the
+        # diffusers default of 256/192 targets 8x VAEs (32x32 latent tiles);
+        # at 16x it would yield only 16x16 latent tiles, which starves the
+        # decoder's receptive field and visibly degrades quality (probe:
+        # PSNR vs untiled 39.6 dB @ 256/192 -> 47.7 dB @ 512/384).
+        self.tile_sample_min_height = 512
+        self.tile_sample_min_width = 512
 
-        # The minimal distance between two spatial tiles
-        self.tile_sample_stride_height = 192
-        self.tile_sample_stride_width = 192
+        # The minimal distance between two spatial tiles (75% of the tile
+        # size, i.e. 25% overlap)
+        self.tile_sample_stride_height = 384
+        self.tile_sample_stride_width = 384
 
         # Precompute and cache conv counts for encoder and decoder for clear_cache speedup
         self._cached_conv_counts = {
@@ -1219,6 +1264,7 @@ class AutoencoderKLQwenImage21(ModelMixin, AutoencoderMixin, ConfigMixin, FromOr
         self._enc_conv_idx = [0]
         self._enc_feat_map = [None] * self._enc_conv_num
 
+    @_with_cudnn_deterministic
     def _encode(self, x: torch.Tensor):
         _, _, num_frame, height, width = x.shape
 
@@ -1273,13 +1319,14 @@ class AutoencoderKLQwenImage21(ModelMixin, AutoencoderMixin, ConfigMixin, FromOr
             return (posterior,)
         return AutoencoderKLOutput(latent_dist=posterior)
 
+    @_with_cudnn_deterministic
     def _decode(self, z: torch.Tensor, return_dict: bool = True):
         _, _, num_frame, height, width = z.shape
         tile_latent_min_height = self.tile_sample_min_height // self.spatial_compression_ratio
         tile_latent_min_width = self.tile_sample_min_width // self.spatial_compression_ratio
 
         if self.use_tiling and (width > tile_latent_min_width or height > tile_latent_min_height):
-            return self.tiled_decode(z, return_dict=return_dict)
+            return self._tiled_decode_adaptive(z, return_dict=return_dict)
 
         self.clear_cache()
         x = self.post_quant_conv(z)
@@ -1345,6 +1392,7 @@ class AutoencoderKLQwenImage21(ModelMixin, AutoencoderMixin, ConfigMixin, FromOr
             )
         return b
 
+    @_with_cudnn_deterministic
     def tiled_encode(self, x: torch.Tensor) -> AutoencoderKLOutput:
         r"""Encode a batch of images using a tiled encoder.
 
@@ -1417,6 +1465,49 @@ class AutoencoderKLQwenImage21(ModelMixin, AutoencoderMixin, ConfigMixin, FromOr
         enc = torch.cat(result_rows, dim=3)[:, :, :, :latent_height, :latent_width]
         return enc
 
+    def _tiled_decode_adaptive(self, z: torch.Tensor, return_dict: bool = True) -> DecoderOutput | torch.Tensor:
+        r"""Decode with the configured tile size, halving it on CUDA OOM.
+
+        Tiled decode favors the largest tile that fits in memory, since larger
+        latent tiles give the decoder more spatial context and decode closer to
+        the untiled result. On OOM the tile size is halved (keeping the 25%
+        overlap ratio) and decoding is retried, down to a floor of 128px
+        sample-space tiles.
+        """
+        saved = (
+            self.tile_sample_min_height,
+            self.tile_sample_min_width,
+            self.tile_sample_stride_height,
+            self.tile_sample_stride_width,
+        )
+        try:
+            while True:
+                try:
+                    return self.tiled_decode(z, return_dict=return_dict)
+                except torch.OutOfMemoryError:
+                    next_height = self.tile_sample_min_height // 2
+                    next_width = self.tile_sample_min_width // 2
+                    if min(next_height, next_width) < 128:
+                        raise
+                    logger.warning(
+                        f"VAE tiled decode OOM with {self.tile_sample_min_height}x{self.tile_sample_min_width} "
+                        f"tiles; retrying with {next_height}x{next_width}."
+                    )
+                    self.tile_sample_min_height = next_height
+                    self.tile_sample_min_width = next_width
+                    self.tile_sample_stride_height = next_height * 3 // 4
+                    self.tile_sample_stride_width = next_width * 3 // 4
+                    self.clear_cache()
+                    torch.accelerator.empty_cache()
+        finally:
+            (
+                self.tile_sample_min_height,
+                self.tile_sample_min_width,
+                self.tile_sample_stride_height,
+                self.tile_sample_stride_width,
+            ) = saved
+
+    @_with_cudnn_deterministic
     def tiled_decode(self, z: torch.Tensor, return_dict: bool = True) -> DecoderOutput | torch.Tensor:
         r"""
         Decode a batch of images using a tiled decoder.

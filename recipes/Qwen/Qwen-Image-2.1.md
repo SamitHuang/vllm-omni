@@ -146,3 +146,8 @@ pipeline) requires matching the cache setting on both sides.
   `QwenImage21Pipeline` is registered in `_NO_CACHE_ACCELERATION`.
 - Sequence parallelism supports Ulysses only; ring attention is not supported.
 - Only true CFG is exposed; there is no `guidance_scale` knob.
+- VAE tiling (`--vae-use-tiling`, also implied by `--vae-patch-parallel-size > 1`)
+  decodes in 512px tiles with 384px stride (32 latent pixels per tile at 16x
+  spatial compression). On CUDA OOM the tile size is automatically halved
+  (keeping 25% overlap) and decoding retried, down to 128px tiles. Tile sizes
+  are not yet exposed as engine arguments.

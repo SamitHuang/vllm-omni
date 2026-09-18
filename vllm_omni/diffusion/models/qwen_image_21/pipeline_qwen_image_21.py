@@ -86,11 +86,14 @@ def _read_vae_scale_factor(od_config: OmniDiffusionConfig) -> int:
     vae_config_path = os.path.join(model_path, "vae/config.json")
     with open(vae_config_path) as f:
         vae_config = json.load(f)
-    if vae_config.get("scale_factor_spatial"):
-        return int(vae_config["scale_factor_spatial"])
-    # 2.1 compresses 16x spatially (four downsampling stages).
+    # The architecture compresses 2x spatially per downsampling stage (one per
+    # `temperal_downsample` entry), e.g. 16x for Qwen-Image 2.1. The shipped
+    # `scale_factor_spatial` (8) under-reports it, so prefer the
+    # architecture-derived value.
     if "temperal_downsample" in vae_config:
         return 2 ** len(vae_config["temperal_downsample"])
+    if vae_config.get("scale_factor_spatial"):
+        return int(vae_config["scale_factor_spatial"])
     return 16
 
 
