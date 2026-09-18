@@ -18,9 +18,10 @@ Memory note: graph entries own an additional copy of the prefix K/V. Decode
 attention concatenates that prefix with target K/V inside the captured region;
 transient tensors use the graph memory pool.
 
-Fallbacks (all logged, all eager): CUDA unavailable, sequence/ring/tensor
-parallelism, HSDP/offload hooks, torch.compile'd blocks, KV-cache quantization,
-dynamic LoRA wrappers, padded text masks (the masked attention path branches on
+Fallbacks (all logged, all eager): CUDA unavailable, model-level CPU offload
+without persistent weight staging, sequence/ring/tensor parallelism,
+HSDP/offload hooks, torch.compile'd blocks, KV-cache quantization, dynamic
+LoRA wrappers, padded text masks (the masked attention path branches on
 mask contents, which cannot be captured), unknown graph key at decode, and
 capture failure.
 """
@@ -154,22 +155,50 @@ class QwenImage21DecodeGraphEntry:
 class QwenImage21DecodeGraphManager:
     """Owns the static KV buffers and captured graphs of one transformer."""
 
-    def __init__(self, model: QwenImage21Transformer2DModel, max_entries: int = 8):
+    def __init__(self, model: QwenImage21Transformer2DModel, max_entries: int = 8, model_level_offload: bool = False):
         self.model = model
         self.max_entries = max_entries
+        self.model_level_offload = model_level_offload
         self.entries: OrderedDict[tuple, QwenImage21DecodeGraphEntry | None] = OrderedDict()
         self._static_eligible: bool | None = None
 
     # ── eligibility ──
 
+    def _offload_reason(self) -> str | None:
+        """Reason decode graphs are incompatible with model-level offload, if any.
+
+        Model-level (sequential) offload registers its hook on the top-level
+        transformer module, not on individual blocks. With persistent staging
+        the hook keeps the DiT on fixed device storage and only rebinds
+        ``p.data`` around each generation, and the swap completes in
+        ``pre_forward`` before capture or replay begin, so captured weight
+        pointers stay valid. Without staging every swap allocates fresh
+        storage and replay would read stale pointers, so capture stays
+        disabled and decode falls back to eager.
+        """
+        registry = getattr(self.model, "_hook_registry", None)
+        hooks = registry._hooks if registry is not None else {}
+        if hooks:
+            from vllm_omni.diffusion.offloader.sequential_backend import (
+                SequentialOffloadHook,
+                sequential_offload_staging_active,
+            )
+
+            if set(hooks) <= {SequentialOffloadHook._HOOK_NAME} and sequential_offload_staging_active(self.model):
+                return None
+            return "model module carries offload/cache hooks"
+        if self.model_level_offload:
+            return "model-level CPU offload without persistent staging swaps weight storage after capture"
+        return None
+
     def _check_static_eligibility(self) -> bool:
         """One-time checks that cannot change after weights are loaded."""
         model = self.model
-        reason = None
+        reason = self._offload_reason()
         param = next(model.parameters(), None)
-        if param is None or param.device.type != "cuda":
+        if reason is None and (param is None or param.device.type != "cuda"):
             reason = f"model is not on CUDA (device={None if param is None else param.device})"
-        else:
+        elif reason is None:
             parallel_config = getattr(model, "parallel_config", None)
             if parallel_config is not None:
                 sp = getattr(parallel_config, "sequence_parallel_size", None) or 1
