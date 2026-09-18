@@ -708,7 +708,7 @@ class QwenImage21Pipeline(
                         raise ValueError(
                             f"Cannot duplicate `image` of batch size {encoded.shape[0]} to {batch_size} text prompts."
                         )
-                    encoded = torch.cat([encoded] * (batch_size // encoded.shape[0]), dim=0)
+                    encoded = encoded.repeat_interleave(batch_size // encoded.shape[0], dim=0)
                 image_latent_height, image_latent_width = encoded.shape[3:]
                 all_image_latents.append(
                     self._pack_latents(
