@@ -145,6 +145,7 @@ def get_qwen_image_21_pre_process_func(
             prompt["additional_information"] = {}
 
         if not raw_image:  # None or empty list: pure text-to-image request
+            request.batch_compatibility_key = ("qwen_image_21", ())
             request.prompt = prompt
             return request
 
@@ -188,6 +189,7 @@ def get_qwen_image_21_pre_process_func(
         prompt["additional_information"]["input_image_sizes"] = input_image_sizes
         prompt["additional_information"]["calculated_height"] = calculated_height
         prompt["additional_information"]["calculated_width"] = calculated_width
+        request.batch_compatibility_key = ("qwen_image_21", tuple(input_image_sizes))
         request.prompt = prompt
         return request
 
