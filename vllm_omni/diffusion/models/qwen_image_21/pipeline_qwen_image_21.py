@@ -541,7 +541,12 @@ class QwenImage21Pipeline(
         if getattr(model_inputs, "mm_token_type_ids", None) is not None:
             forward_kwargs["mm_token_type_ids"] = model_inputs.mm_token_type_ids
 
-        outputs = self.text_encoder(**forward_kwargs)
+        text_model = getattr(self.text_encoder.model, "language_model", self.text_encoder.model)
+        handle = text_model.norm.register_forward_hook(lambda module, args, output: args[0])
+        try:
+            outputs = self.text_encoder(**forward_kwargs)
+        finally:
+            handle.remove()
         hidden_states = outputs.hidden_states[-1]
 
         split_hidden_states = list(self._extract_masked_hidden(hidden_states, model_inputs.attention_mask))
