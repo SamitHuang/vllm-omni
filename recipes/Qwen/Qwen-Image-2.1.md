@@ -27,7 +27,7 @@ text-to-image.
 
 - Related offline examples:
   [`examples/offline_inference/text_to_image/text_to_image.py`](../../examples/offline_inference/text_to_image/text_to_image.py),
-  [`examples/offline_inference/image_to_image/qwen_image_21_edit.py`](../../examples/offline_inference/image_to_image/qwen_image_21_edit.py)
+  [`examples/offline_inference/image_to_image/image_edit.py`](../../examples/offline_inference/image_to_image/image_edit.py)
 - Supported models table:
   [`docs/models/supported_models.md`](../../docs/models/supported_models.md)
 - Feature compatibility matrix:
@@ -52,7 +52,10 @@ python examples/offline_inference/text_to_image/text_to_image.py \
 ### Image-conditioned generation (editing)
 
 ```bash
-python examples/offline_inference/image_to_image/qwen_image_21_edit.py \
+python examples/offline_inference/image_to_image/image_edit.py \
+  --model Qwen/Qwen-Image-2.1 \
+  --color-format RGBA \
+  --seed 42 \
   --image qwen_bear.png \
   --prompt "Let this mascot dance under the moon, surrounded by floating stars" \
   --negative-prompt "blurry, low quality, text, watermark" \
@@ -70,7 +73,10 @@ bash examples/offline_inference/image_to_image/run_qwen_image_21_edit.sh
 Up to 4 condition images can be passed via `--image`:
 
 ```bash
-python examples/offline_inference/image_to_image/qwen_image_21_edit.py \
+python examples/offline_inference/image_to_image/image_edit.py \
+  --model Qwen/Qwen-Image-2.1 \
+  --color-format RGBA \
+  --seed 42 \
   --image input1.png input2.png \
   --prompt "Combine these images into a single scene" \
   --negative-prompt "blurry, low quality" \
@@ -78,6 +84,13 @@ python examples/offline_inference/image_to_image/qwen_image_21_edit.py \
   --num-inference-steps 50 \
   --cfg-scale 4.0
 ```
+
+Use `--color-format RGBA` to preserve transparency in condition images. The
+shared example otherwise loads inputs as RGB. Add `--width` and `--height`
+(multiples of 32) to set the output size; when omitted, Qwen-Image 2.1 derives
+it from the last condition image's aspect ratio at approximately 1024×1024.
+Use `--num-outputs-per-prompt` to generate multiple images and `--vae-use-tiling`
+to reduce VAE memory usage. The launcher accepts these options as well.
 
 ## Online Serving
 
@@ -101,6 +114,32 @@ running requests have completed their first denoising step, newly arriving
 requests wait for that batch to finish before starting their own prefill.
 `--max-num-seqs` controls batch capacity; mixed prefill/decode admission is not
 supported yet.
+
+### CUDA Graph decode
+
+Qwen-Image-2.1 automatically uses CUDA Graph for supported fixed-shape denoising
+decode steps when `enforce_eager=False` (the default). Prefill remains eager.
+This works with both request execution and `--step-execution`.
+
+To disable graph capture:
+
+```bash
+vllm serve Qwen/Qwen-Image-2.1 --omni --enforce-eager --vae-use-tiling
+```
+
+The same control is available as `Omni(..., enforce_eager=True)` and as
+`enforce_eager: true` on a stage in the deployment YAML. It disables both graph
+capture and automatic `torch.compile`. Otherwise, this transformer uses its
+model-specific decode graphs instead of automatic `torch.compile`.
+
+The autoregressive engine's `compilation_config.cudagraph_mode` does not control
+this diffusion path; use `enforce_eager` to force eager execution.
+
+TP/SP/ring parallelism, HSDP, offload/cache hooks, compiled blocks, quantized
+KV caches, dynamic LoRA, and padded text masks fall back to eager decode.
+Graphs keep separate entries for different image layouts and copy request-owned
+prefix K/V into static buffers before replay. Those buffers require additional
+memory; graph entries are bounded by the transformer's cache limit.
 
 ### Verification
 

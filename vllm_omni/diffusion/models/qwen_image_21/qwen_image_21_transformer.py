@@ -13,6 +13,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from diffusers.models.modeling_outputs import Transformer2DModelOutput
+from diffusers.models.normalization import RMSNorm
 from vllm.logger import init_logger
 from vllm.model_executor.layers.linear import (
     ColumnParallelLinear,
@@ -107,7 +108,10 @@ class QwenImage21TemporalTimesteps(nn.Module):
         self.time_factor = time_factor
 
         half = timestep_dim // 2
-        freqs = torch.exp(-math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half)
+        # Compute the fixed table on CPU like Diffusers, then honor the loader's device.
+        freqs = torch.exp(
+            -math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32, device="cpu") / half
+        ).to(torch.get_default_device())
         self.register_buffer("freqs", freqs, persistent=False)
 
     def forward(self, timestep: torch.Tensor) -> torch.Tensor:
@@ -294,12 +298,15 @@ class QwenImage21Rope(nn.Module):
         self.theta = theta
         self.axes_dim = axes_dim
 
-        pos_index = torch.arange(8192)
-        neg_index = torch.arange(1024).flip(0) * -1 - 1
-        self.freqs = [
-            torch.cat([self.rope_params(pos_index, dim, theta), self.rope_params(neg_index, dim, theta)], dim=0)
-            for dim in axes_dim
-        ]
+        # Match Diffusers' CPU initialization even when the loader sets a CUDA
+        # default device; CPU and CUDA trigonometric kernels round differently.
+        with torch.device("cpu"):
+            pos_index = torch.arange(8192)
+            neg_index = torch.arange(1024).flip(0) * -1 - 1
+            self.freqs = [
+                torch.cat([self.rope_params(pos_index, dim, theta), self.rope_params(neg_index, dim, theta)], dim=0)
+                for dim in axes_dim
+            ]
 
     def rope_params(self, index: torch.Tensor, dim: int, theta: int = 10000) -> torch.Tensor:
         freqs = torch.outer(index, 1.0 / torch.pow(theta, torch.arange(0, dim, 2).to(torch.float32).div(dim)))
@@ -374,9 +381,10 @@ class QwenImage21Attention(nn.Module):
         self.num_heads = self.to_qkv.num_heads
         self.num_kv_heads = self.to_qkv.num_kv_heads
 
-        # Per-head RMSNorm over the head dim; TP shards whole heads, so the norm is TP-safe.
-        self.norm_q = nn.RMSNorm(dim_head, eps=eps)
-        self.norm_k = nn.RMSNorm(dim_head, eps=eps)
+        # Diffusers normalizes in FP32, then casts before the learned scale.
+        # Keep that rounding order for BF16 Q/K; TP shards whole heads.
+        self.norm_q = RMSNorm(dim_head, eps=eps)
+        self.norm_k = RMSNorm(dim_head, eps=eps)
 
         self.to_out = RowParallelLinear(
             heads * dim_head,
@@ -718,7 +726,6 @@ class QwenImage21Transformer2DModel(CachedTransformer):
         causal_block: bool = True,
         quant_config: QuantizationConfig | None = None,
         prefix: str = "transformer",
-        enable_cuda_graph_decode: bool | None = None,
         cuda_graph_max_decode_graphs: int = 8,
     ):
         super().__init__()
@@ -790,14 +797,11 @@ class QwenImage21Transformer2DModel(CachedTransformer):
         # Module boundary where _sp_plan shards the target tokens + their RoPE freqs.
         self.sequence_prepare = QwenImage21SequencePrepare(self.img_in, self.pos_embed)
 
-        # Opt-in CUDA Graph capture of the fixed-shape KV-cache decode steps.
-        # Default off: ``None`` defers to ``od_config.enable_cuda_graph_decode``.
-        if enable_cuda_graph_decode is None:
-            enable_cuda_graph_decode = bool(getattr(od_config, "enable_cuda_graph_decode", False))
-        self.enable_cuda_graph_decode = enable_cuda_graph_decode
+        # Use decode graphs unless the caller requests eager execution.
+        self.enable_cuda_graph_decode = not od_config.enforce_eager
         self._decode_graph_manager = (
             QwenImage21DecodeGraphManager(self, max_entries=cuda_graph_max_decode_graphs)
-            if enable_cuda_graph_decode
+            if self.enable_cuda_graph_decode
             else None
         )
 
@@ -972,7 +976,9 @@ class QwenImage21Transformer2DModel(CachedTransformer):
                 timestep=timestep,
                 kv_cache=kv_cache,
                 cache_branch=cache_branch,
-                target_tokens=math.prod(layout[-1]),
+                img_shapes=layout,
+                img_mask=img_mask,
+                encoder_hidden_states_mask=encoder_hidden_states_mask,
             )
             if graph_output is not None:
                 if not return_dict:
@@ -1039,6 +1045,9 @@ class QwenImage21Transformer2DModel(CachedTransformer):
             joint_key_valid = F.pad(joint_key_valid, (0, sp_padding), value=False)
 
         has_padding = joint_key_valid is not None and not bool(joint_key_valid.all())
+        if not has_padding:
+            # Match Diffusers and use the same mask-free dispatch in eager and graph decode.
+            joint_key_valid = None
         attn_metadata: AttentionMetadata | None = None
         cache_write_len: int | None = None
         if is_decode:
@@ -1082,13 +1091,12 @@ class QwenImage21Transformer2DModel(CachedTransformer):
             and kv_cache is not None
             and self._decode_graph_manager is not None
         ):
-            # Move the freshly written prefix K/V into fixed-address buffers so
-            # decode steps can replay a captured CUDA graph against them.
+            # Allocate graph scratch buffers; the request keeps its own prefix K/V.
             self._decode_graph_manager.register_prefill(
                 kv_cache=kv_cache,
                 cache_branch=cache_branch,
                 prefix_len=cache_write_len,
-                target_tokens=target_freqs.shape[0],
+                img_shapes=layout,
                 target_freqs=target_freqs,
                 joint_key_valid=joint_key_valid,
                 dtype=hidden_states.dtype,
@@ -1113,9 +1121,9 @@ class QwenImage21Transformer2DModel(CachedTransformer):
         """The exact decode-step computation, captured into a CUDA graph.
 
         Mirrors the eager decode path of ``forward``: target tokens only,
-        prefix K/V read from the entry's static buffers, no attention metadata
-        (the registration gate excludes padded masks), and an all-ones
-        modulation mask. All inputs live in the entry's fixed-address buffers.
+        prefix K/V read from the entry's static buffers, the same mask-free
+        attention dispatch as eager decode, and an all-ones modulation mask.
+        All inputs live in the entry's fixed-address buffers.
         """
         hidden_states = self.img_in(entry.hidden)
         timestep = torch.cat([entry.timestep, entry.timestep.new_zeros(1)], dim=0)

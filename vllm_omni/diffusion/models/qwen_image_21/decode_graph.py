@@ -9,19 +9,14 @@ default cache stores prefix K/V in freshly allocated tensors, so a captured
 graph would bind addresses that the next request (or a step-mode cache merge)
 no longer owns.
 
-This module keeps the prefix K/V in persistent, fixed-address buffers. Prefill
-copies its K/V into them and re-points the caller's cache dict at the buffers;
-decode then replays a captured graph that reads those buffers plus static input
-buffers (target latents, timestep, RoPE frequencies). One graph is captured per
-``(branch, batch, prefix_len, target_tokens, dtype, device, backend)`` key and
-reused across requests: a new prefill with the same key rewrites the buffers in
-place, which a captured graph reads correctly because it binds addresses, not
-contents.
+Requests retain ownership of their prefix K/V. Decode refreshes separate
+fixed-address graph buffers when the active prefix tensors change. Graphs
+are keyed by branch, batch, prefix length, complete image layout,
+dtype, device and backend, so equal token counts with different RoPE layouts stay separate.
 
-Memory note: only the *prefix* K/V are persistent. The decode attention still
-concatenates prefix K/V with the current step's target K/V inside the captured
-region, and that transient tensor is served by the graph's memory pool, so the
-persistent footprint is the same as the existing dict cache.
+Memory note: graph entries own an additional copy of the prefix K/V. Decode
+attention concatenates that prefix with target K/V inside the captured region;
+transient tensors use the graph memory pool.
 
 Fallbacks (all logged, all eager): CUDA unavailable, sequence/ring/tensor
 parallelism, HSDP/offload hooks, torch.compile'd blocks, KV-cache quantization,
@@ -32,12 +27,15 @@ capture failure.
 
 from __future__ import annotations
 
+import weakref
 from collections import OrderedDict
 from typing import TYPE_CHECKING
 
 import torch
 from vllm.logger import init_logger
 from vllm.platforms import current_platform
+
+from vllm_omni.platforms import current_omni_platform
 
 if TYPE_CHECKING:
     from vllm_omni.diffusion.models.qwen_image_21.qwen_image_21_transformer import (
@@ -67,8 +65,8 @@ class QwenImage21DecodeGraphEntry:
 
     Buffers are created outside inference mode so replay-side ``copy_`` is
     legal regardless of the caller's grad context. ``graph`` is None until the
-    first decode step captures it; ``failed`` disables capture permanently for
-    this key after an exception.
+    first decode step captures it. Failed entries are replaced by a ``None``
+    marker in the manager so their buffers can be released.
     """
 
     def __init__(
@@ -99,15 +97,30 @@ class QwenImage21DecodeGraphEntry:
             # inference_mode, and the captured body takes views of this tensor
             # outside it, which is forbidden for inference tensors.
             self.freqs = freqs.clone()
-        # Decode needs no mask once padding is excluded (see the manager's
-        # prefill gate), so the captured body attends without metadata.
-        self.attn_metadata = None
+            self.attn_metadata = None
         # Per-block cache dicts with the same shape as the legacy protocol.
         self.block_caches = [{branch: {"key": self.k[i], "value": self.v[i]}} for i in range(len(kv_shapes))]
         self.graph: torch.cuda.CUDAGraph | None = None
         self.output: torch.Tensor | None = None
-        self.failed = False
         self.captures = 0
+        self.prefix_sources: list[tuple[weakref.ReferenceType[torch.Tensor], int | None]] = []
+
+    def refresh_prefix(self, kv_cache: list[dict[str, dict[str, torch.Tensor]]]) -> None:
+        sources = [block[self.branch][name] for block in kv_cache for name in ("key", "value")]
+        versions = [None if tensor.is_inference() else tensor._version for tensor in sources]
+        if len(sources) == len(self.prefix_sources) and all(
+            previous() is tensor and version == current_version
+            for (previous, version), tensor, current_version in zip(self.prefix_sources, sources, versions)
+        ):
+            return
+        # Prefill replaces inference-mode tensors; decode treats them as immutable.
+        # Weak references avoid retaining completed requests or mistaking a reused
+        # allocation for the same prefix. Normal tensors also track in-place writes.
+        self.prefix_sources = []
+        for i, block in enumerate(kv_cache):
+            self.k[i].copy_(block[self.branch]["key"])
+            self.v[i].copy_(block[self.branch]["value"])
+        self.prefix_sources = [(weakref.ref(tensor), version) for tensor, version in zip(sources, versions)]
 
     def capture(self, body) -> None:
         """Warm up on a side stream, then capture one decode step.
@@ -119,10 +132,12 @@ class QwenImage21DecodeGraphEntry:
         """
         side = torch.cuda.Stream()
         side.wait_stream(torch.cuda.current_stream())
-        with torch.cuda.stream(side), torch.inference_mode(False), torch.no_grad():
-            for _ in range(2):
-                body()
-        torch.cuda.current_stream().wait_stream(side)
+        try:
+            with torch.cuda.stream(side), torch.inference_mode(False), torch.no_grad():
+                for _ in range(2):
+                    body()
+        finally:
+            torch.cuda.current_stream().wait_stream(side)
 
         graph = torch.cuda.CUDAGraph()
         # The platform-wide pool is shared with every other captured path in
@@ -142,7 +157,7 @@ class QwenImage21DecodeGraphManager:
     def __init__(self, model: QwenImage21Transformer2DModel, max_entries: int = 8):
         self.model = model
         self.max_entries = max_entries
-        self.entries: OrderedDict[tuple, QwenImage21DecodeGraphEntry] = OrderedDict()
+        self.entries: OrderedDict[tuple, QwenImage21DecodeGraphEntry | None] = OrderedDict()
         self._static_eligible: bool | None = None
 
     # ── eligibility ──
@@ -202,17 +217,12 @@ class QwenImage21DecodeGraphManager:
         kv_cache: list[dict[str, dict[str, torch.Tensor]]],
         cache_branch: str,
         prefix_len: int,
-        target_tokens: int,
+        img_shapes: list[tuple[int, int, int]],
         target_freqs: torch.Tensor,
         joint_key_valid: torch.Tensor | None,
         dtype: torch.dtype,
     ) -> None:
-        """Move a freshly prefilled prefix K/V into static buffers.
-
-        The caller's ``kv_cache`` dicts are re-pointed at the static buffers, so
-        the existing decode path reads fixed addresses and a captured graph can
-        be replayed for later steps. Prefill itself always runs eagerly.
-        """
+        """Prepare graph buffers without changing the request's prefix K/V."""
         if not self.eligible() or torch.compiler.is_compiling():
             return
         if _dynamic_lora_wrappers_present(self.model):
@@ -239,44 +249,55 @@ class QwenImage21DecodeGraphManager:
             cache_branch,
             batch_size,
             prefix_len,
-            target_tokens,
+            tuple(tuple(shape) for shape in img_shapes),
             dtype,
             first["key"].device.index,
             self._backend_name(),
         )
 
-        entry = self.entries.get(key)
-        if entry is None:
+        if key not in self.entries:
             while len(self.entries) >= self.max_entries:
-                evicted_key, _ = self.entries.popitem(last=False)
+                evicted_key, evicted_entry = self.entries.popitem(last=False)
+                del evicted_entry
                 logger.debug("Evicting decode graph entry %s (max_entries=%d)", evicted_key, self.max_entries)
-            entry = QwenImage21DecodeGraphEntry(
-                branch=cache_branch,
-                batch_size=batch_size,
-                prefix_len=prefix_len,
-                target_tokens=target_tokens,
-                in_channels=self.model.in_channels,
-                dtype=dtype,
-                device=first["key"].device,
-                kv_shapes=[block_cache[cache_branch]["key"].shape for block_cache in kv_cache],
-                kv_dtype=first["key"].dtype,
-                freqs=target_freqs,
-            )
-            self.entries[key] = entry
+            allocation_error = None
+            try:
+                self.entries[key] = QwenImage21DecodeGraphEntry(
+                    branch=cache_branch,
+                    batch_size=batch_size,
+                    prefix_len=prefix_len,
+                    target_tokens=target_freqs.shape[0],
+                    in_channels=self.model.in_channels,
+                    dtype=dtype,
+                    device=first["key"].device,
+                    kv_shapes=[block_cache[cache_branch]["key"].shape for block_cache in kv_cache],
+                    kv_dtype=first["key"].dtype,
+                    freqs=target_freqs,
+                )
+            except torch.OutOfMemoryError as exc:
+                allocation_error = str(exc)
+            if allocation_error is not None:
+                # Keep a bounded failure marker without retaining tensors or the exception traceback.
+                self.entries[key] = None
+                current_omni_platform.empty_cache()
+                logger.warning(
+                    "Qwen-Image-2.1 CUDA graph allocation failed for key=%s: %s. Falling back to eager decode.",
+                    key,
+                    allocation_error,
+                )
+                return
         else:
             self.entries.move_to_end(key)
 
-        for i, block_cache in enumerate(kv_cache):
-            parts = block_cache[cache_branch]
-            entry.k[i].copy_(parts["key"])
-            entry.v[i].copy_(parts["value"])
-            parts["key"] = entry.k[i]
-            parts["value"] = entry.v[i]
+        entry = self.entries[key]
+        if entry is not None:
+            entry.prefix_sources = []
+
         logger.debug(
             "Registered decode graph entry key=%s (entries=%d, captured=%d)",
             key,
             len(self.entries),
-            sum(1 for e in self.entries.values() if e.graph is not None),
+            sum(1 for e in self.entries.values() if e is not None and e.graph is not None),
         )
 
     # ── decode replay ──
@@ -288,11 +309,20 @@ class QwenImage21DecodeGraphManager:
         timestep: torch.Tensor,
         kv_cache: list[dict[str, dict[str, torch.Tensor]]],
         cache_branch: str,
-        target_tokens: int,
+        img_shapes: list[tuple[int, int, int]],
+        img_mask: torch.Tensor,
+        encoder_hidden_states_mask: torch.Tensor | None,
     ) -> torch.Tensor | None:
         """Replay the captured decode step, or return None to fall back to eager."""
         if not self.eligible() or torch.compiler.is_compiling():
             return None
+        if _dynamic_lora_wrappers_present(self.model):
+            self.clear()
+            return None
+        if encoder_hidden_states_mask is not None:
+            text_positions = ~img_mask[0, : encoder_hidden_states_mask.shape[1]]
+            if not bool(encoder_hidden_states_mask[:, text_positions].all()):
+                return None
         first = kv_cache[0][cache_branch]
         cached_key = first["key"]
         if cached_key.device.type != "cuda":
@@ -304,40 +334,36 @@ class QwenImage21DecodeGraphManager:
             cache_branch,
             cached_key.shape[0],
             cached_key.shape[1],
-            target_tokens,
+            tuple(tuple(shape) for shape in img_shapes),
             hidden_states.dtype,
             cached_key.device.index,
             self._backend_name(),
         )
         entry = self.entries.get(key)
-        if entry is None or entry.failed:
+        if entry is None:
             return None
         self.entries.move_to_end(key)
 
-        entry.hidden.copy_(hidden_states[:, -target_tokens:])
+        entry.hidden.copy_(hidden_states[:, -entry.target_tokens :])
         entry.timestep.copy_(timestep)
-        # The caller's cache dicts normally already reference the entry's
-        # buffers (prefill re-pointed them). A step-mode batched decode instead
-        # hands over freshly merged tensors; copy those into the static buffers.
-        for i, block_cache in enumerate(kv_cache):
-            parts = block_cache[cache_branch]
-            if parts["key"] is not entry.k[i]:
-                entry.k[i].copy_(parts["key"])
-                entry.v[i].copy_(parts["value"])
-                parts["key"] = entry.k[i]
-                parts["value"] = entry.v[i]
+        # Graph buffers are scratch space; request caches must never alias them.
+        entry.refresh_prefix(kv_cache)
 
         if entry.graph is None:
+            capture_error = None
             try:
                 entry.capture(lambda: self.model._decode_graph_forward(entry))
             except Exception as exc:
-                entry.failed = True
-                entry.graph = None
+                capture_error = str(exc)
+            if capture_error is not None:
+                self.entries[key] = None
+                del entry
+                current_omni_platform.empty_cache()
                 logger.warning(
                     "Qwen-Image-2.1 CUDA graph capture failed for key=%s: %s. "
                     "Falling back to eager decode for this shape.",
                     key,
-                    exc,
+                    capture_error,
                 )
                 return None
             logger.info("Captured Qwen-Image-2.1 decode graph for key=%s", key)

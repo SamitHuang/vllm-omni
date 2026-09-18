@@ -902,11 +902,6 @@ class OmniDiffusionConfig:
 
     # Compilation
     enforce_eager: bool = False
-    # Opt-in: capture fixed-shape KV-cache decode (denoising) steps into CUDA
-    # graphs. Currently implemented by Qwen-Image-2.1's transformer; unsupported
-    # configurations (SP/TP, ring, HSDP, dynamic LoRA, padded masks) log and
-    # fall back to eager decode. Other models ignore this flag.
-    enable_cuda_graph_decode: bool = False
     # Controls the generic compilation path used when a pipeline does not
     # provide its own setup_compile() implementation.
     diffusion_compile_granularity: str = "regional"

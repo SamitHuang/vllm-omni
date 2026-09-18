@@ -144,7 +144,7 @@ def get_qwen_image_21_pre_process_func(
         if "additional_information" not in prompt:
             prompt["additional_information"] = {}
 
-        if not raw_image:  # None or empty list: pure text-to-image request
+        if raw_image is None or (isinstance(raw_image, list) and len(raw_image) == 0):
             request.batch_compatibility_key = ("qwen_image_21", ())
             request.prompt = prompt
             return request
@@ -744,6 +744,7 @@ class QwenImage21Pipeline(
         timesteps, num_inference_steps = retrieve_timesteps(
             self.scheduler,
             num_inference_steps,
+            device=self.device,
             sigmas=sigmas,
             mu=mu,
         )

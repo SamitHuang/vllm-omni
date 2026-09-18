@@ -82,3 +82,40 @@ def test_text_input_forms_share_compatibility_key(preprocess, prompt):
     empty_list_request = preprocess(make_request("empty-list", []))
     assert processed.batch_compatibility_key is not None
     assert processed.batch_compatibility_key == empty_list_request.batch_compatibility_key
+
+
+@pytest.mark.parametrize("image_type", ["numpy", "tensor"])
+def test_preprocess_accepts_array_images_without_truth_testing(preprocess, image_type):
+    import numpy as np
+    import torch
+
+    pixels = np.full((32, 32, 4), 255, dtype=np.uint8)
+    image = torch.from_numpy(pixels).permute(2, 0, 1) if image_type == "tensor" else pixels
+    request = make_request("array", [])
+    request.prompt["multi_modal_data"]["image"] = image
+    processed = preprocess(request)
+    assert processed.batch_compatibility_key is not None
+    assert processed.allow_mixed_step_phases is False
+
+
+def test_late_prefill_waits_until_all_decode_requests_finish(preprocess):
+    from vllm_omni.diffusion.worker.utils import BatchRunnerOutput, RunnerOutput
+
+    scheduler = StepScheduler()
+    scheduler.initialize(SimpleNamespace(max_num_seqs=3))
+    for request_id in ("a", "b"):
+        scheduler.add_request(preprocess(make_request(request_id, [])))
+    wave = scheduler.schedule()
+    assert wave.scheduled_request_ids == ["a", "b"]
+    scheduler.update_from_output(
+        wave,
+        BatchRunnerOutput.from_list(
+            [RunnerOutput(request_id=request_id, step_index=1, finished=False) for request_id in ("a", "b")]
+        ),
+    )
+    scheduler.add_request(preprocess(make_request("late", [])))
+    assert scheduler.schedule().scheduled_request_ids == ["a", "b"]
+    scheduler.finish_requests("a", DiffusionRequestStatus.FINISHED_COMPLETED)
+    assert scheduler.schedule().scheduled_request_ids == ["b"]
+    scheduler.finish_requests("b", DiffusionRequestStatus.FINISHED_COMPLETED)
+    assert scheduler.schedule().scheduled_request_ids == ["late"]
