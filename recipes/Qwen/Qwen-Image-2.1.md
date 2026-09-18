@@ -96,6 +96,12 @@ vllm serve Qwen/Qwen-Image-2.1 --omni \
   --max-num-seqs 8
 ```
 
+Step execution batches compatible requests at the same KV-cache phase. Once
+running requests have completed their first denoising step, newly arriving
+requests wait for that batch to finish before starting their own prefill.
+`--max-num-seqs` controls batch capacity; mixed prefill/decode admission is not
+supported yet.
+
 ### Verification
 
 For a direct API smoke test:

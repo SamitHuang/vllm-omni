@@ -135,6 +135,7 @@ def get_qwen_image_21_pre_process_func(
         request: OmniDiffusionRequest,
     ):
         """Pre-process requests for QwenImage21Pipeline."""
+        request.allow_mixed_step_phases = False
         prompt = request.prompt
         multi_modal_data = prompt.get("multi_modal_data", {}) if not isinstance(prompt, str) else None
         raw_image = multi_modal_data.get("image", None) if multi_modal_data is not None else None
@@ -1213,11 +1214,12 @@ class QwenImage21Pipeline(
         img_mask = self._append_target_slots(torch.cat(mask_rows, dim=0), latents.shape[1])
         negative_img_mask = None
         if input_batch.do_true_cfg:
+            negative_seq_len = input_batch.negative_prompt_embeds.shape[1]
             neg_rows = []
             for state in states:
                 row = state.extra["negative_image_pad_mask"]
-                if row.shape[1] < max_seq_len:
-                    row = F.pad(row, (0, max_seq_len - row.shape[1]), value=False)
+                if row.shape[1] < negative_seq_len:
+                    row = F.pad(row, (0, negative_seq_len - row.shape[1]), value=False)
                 neg_rows.append(row)
             negative_img_mask = self._append_target_slots(torch.cat(neg_rows, dim=0), latents.shape[1])
 
