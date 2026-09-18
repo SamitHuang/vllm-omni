@@ -259,6 +259,58 @@ BF16 vision tower, so it is unaffected by text-encoder FP8. See
 [`docs/user_guide/quantization/fp8.md`](../../docs/user_guide/quantization/fp8.md)
 for the scope rules.
 
+#### FP8 prefix KV storage
+
+The cached prefix K/V can be stored in FP8 E4M3 (with per-token-per-head fp32
+scales), halving the prefix-cache memory — relevant for long prompts (up to
+8192 text tokens) and up to 4 condition images (~4096 latent tokens each).
+Prefill quantizes once; decode dequantizes per step, so attention compute is
+unchanged. Enable it through the model-specific `extras` config (e.g. in the
+deploy YAML's stage `extras` or as an `Omni(...)` engine kwarg):
+
+```yaml
+extras:
+  prefix_kv_cache_dtype: "fp8"
+```
+
+Accepted values: `"fp8"` / `"fp8_e4m3"` (K and V quantized), `"fp8_v"` (V
+only — K stays in the native dtype), and `None` / `"auto"` (default, native
+dtype — behavior unchanged). This is independent of
+`diffusion_kv_cache_dtype`, which quantizes attention Q/K/V *compute* per
+forward pass on supported backends.
+
+Measured on T2I 1024x1024 (seed 42, 50 steps, true CFG 4.0, PSNR vs. the
+bf16 baseline): **`"fp8"` 34.9 dB**, **`"fp8_v"` 40.9 dB** — same composition
+and semantics, with texture-level drift in fine detail for `"fp8"`, and
+visually indistinguishable output for `"fp8_v"`. The error is dominated by
+K quantization: post-RoPE keys are the precision-sensitive half of the
+cache, so `"fp8_v"` buys back ~6 dB at 75% (instead of 50%) of the original
+cache size. The residual error is inherent e4m3 precision accumulated
+coherently over the denoising trajectory; finer scale granularity
+(per-tensor/per-head/per-token were compared) or Hadamard-rotated V did not
+improve it. The saving scales with prefix length — at the limit
+(8192 text tokens + 4 condition images, ~24.6k prefix tokens) the prefix
+cache is ~12.9 GB per CFG branch in bf16, ~6.6 GB in `"fp8"` and ~9.7 GB in
+`"fp8_v"`, which is where this option matters. Treat it as an opt-in for
+memory-bound long-prompt / multi-image workloads, not a free lunch;
+`"fp8_v"` is the better default trade-off when quality matters.
+
+Note: a quantized prefix cache is not CUDA-graph capturable — requests using
+this option stay on the eager decode path (a warning is logged once).
+
+#### Why not the scheduler-managed paged KV (`DiffusionKVCacheMode.PAGED_SCHEDULER`)?
+
+Evaluated and deliberately not adopted (see the `qwen21-p0-kv` commit message
+for the full analysis): the paged scheduler targets *cross-request* KV
+management — a statically sized page pool, block sharing/dedup, and eviction —
+whereas this prefix cache lives exactly as long as one generation and is
+sized once per request. Migrating would require routing decode attention
+through the worker paged adapter (writing fresh target K/V into pages every
+step), per-request page tables, and re-validating the block-causal
+piecewise-span masking and Ulysses/CFG constraints, for no memory benefit over
+the per-request dense tensors. The FP8 storage above captures the actual
+memory win at ~1% of the integration cost.
+
 ## Known Limitations
 
 - Cache acceleration backends (`cache_dit`, `tea_cache`) are not supported;
