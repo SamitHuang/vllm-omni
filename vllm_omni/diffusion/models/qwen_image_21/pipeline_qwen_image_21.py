@@ -186,6 +186,8 @@ def get_qwen_image_21_pre_process_func(
     ):
         """Pre-process requests for QwenImage21Pipeline."""
         request.allow_mixed_step_phases = False
+        if request.sampling_params.true_cfg_scale is None:
+            request.sampling_params.true_cfg_scale = 1.0
         prompt = request.prompt
         multi_modal_data = prompt.get("multi_modal_data", {}) if not isinstance(prompt, str) else None
         raw_image = multi_modal_data.get("image", None) if multi_modal_data is not None else None
@@ -1067,7 +1069,7 @@ class QwenImage21Pipeline(
         generator = req.collate_request_generators(num_images_per_prompt, None)
         latents = req.collate_request_tensors("latents", None)
         true_cfg_scale = (
-            common_sampling_params.true_cfg_scale if common_sampling_params.true_cfg_scale is not None else 4.0
+            common_sampling_params.true_cfg_scale if common_sampling_params.true_cfg_scale is not None else 1.0
         )
         output_type = common_sampling_params.output_type or "pil"
 
@@ -1154,7 +1156,7 @@ class QwenImage21Pipeline(
             sigmas=sampling.sigmas,
             num_images_per_prompt=num_images_per_prompt,
             generator=sampling.generator,
-            true_cfg_scale=sampling.true_cfg_scale if sampling.true_cfg_scale is not None else 4.0,
+            true_cfg_scale=sampling.true_cfg_scale if sampling.true_cfg_scale is not None else 1.0,
             max_sequence_length=sampling.max_sequence_length or self._max_length,
             per_request_images=per_request_images,
             attention_kwargs=kwargs.get("attention_kwargs"),

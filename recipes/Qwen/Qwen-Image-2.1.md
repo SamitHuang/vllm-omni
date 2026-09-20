@@ -43,10 +43,9 @@ text-to-image.
 python examples/offline_inference/text_to_image/text_to_image.py \
   --model Qwen/Qwen-Image-2.1 \
   --prompt "A ceramic teapot on a wooden table" \
-  --negative-prompt "blurry, low quality, text, watermark" \
   --output qwen_image_21_t2i.png \
   --num-inference-steps 50 \
-  --cfg-scale 4.0
+  --cfg-scale 1.0
 ```
 
 ### Image-conditioned generation (editing)
@@ -58,10 +57,9 @@ python examples/offline_inference/image_to_image/image_edit.py \
   --seed 42 \
   --image qwen_bear.png \
   --prompt "Let this mascot dance under the moon, surrounded by floating stars" \
-  --negative-prompt "blurry, low quality, text, watermark" \
   --output qwen_image_21_edit.png \
   --num-inference-steps 50 \
-  --cfg-scale 4.0
+  --cfg-scale 1.0
 ```
 
 or via the bundled launcher:
@@ -79,10 +77,9 @@ python examples/offline_inference/image_to_image/image_edit.py \
   --seed 42 \
   --image input1.png input2.png \
   --prompt "Combine these images into a single scene" \
-  --negative-prompt "blurry, low quality" \
   --output qwen_image_21_multi.png \
   --num-inference-steps 50 \
-  --cfg-scale 4.0
+  --cfg-scale 1.0
 ```
 
 Use `--color-format RGBA` to preserve transparency in condition images. The
@@ -151,10 +148,9 @@ curl http://localhost:8091/v1/images/generations \
   -d '{
     "model": "Qwen/Qwen-Image-2.1",
     "prompt": "A ceramic teapot on a wooden table",
-    "negative_prompt": "blurry, low quality, text, watermark",
     "size": "1024x1024",
     "num_inference_steps": 50,
-    "true_cfg_scale": 4.0,
+    "true_cfg_scale": 1.0,
     "seed": 42
   }'
 ```
@@ -168,12 +164,17 @@ OpenAI-compatible multimodal endpoint (`/v1/chat/completions` with
 
 | Parameter | Default | Notes |
 | --- | --- | --- |
-| `true_cfg_scale` | 4.0 | Only takes effect when `negative_prompt` is provided. Qwen-Image 2.1 supports true CFG only — there is no `guidance_scale` parameter. |
+| `true_cfg_scale` | 1.0 | Disables the negative-prompt branch by default. Set above 1 with a `negative_prompt` to enable true CFG. Qwen-Image 2.1 supports true CFG only — there is no `guidance_scale` parameter. |
 | `num_inference_steps` | 50 | Number of denoising steps. |
 | `height` / `width` | 1024×1024 | Must be multiples of 32. For image-conditioned requests, leaving them unset derives the output size from the last condition image's aspect ratio at ~1024×1024. |
-| `negative_prompt` | None | Required to activate true classifier-free guidance (`true_cfg_scale > 1`). |
+| `negative_prompt` | None | Ignored at the default CFG scale of 1.0; used only when `true_cfg_scale > 1`. |
 | condition images | — | Up to 4 input images per request; more than 4 raises an error. |
 | `seed` | — | Fix for reproducible outputs. |
+
+The default CFG scale of 1.0 runs only the positive-prompt branch at each
+denoising step. To enable negative-prompt guidance, explicitly set
+`--cfg-scale` (offline) or `true_cfg_scale` (API) above 1 and provide a
+negative prompt. This changes the generated output as well as compute cost.
 
 ### Prefix KV cache
 
@@ -198,9 +199,8 @@ in BF16 by construction:
 python examples/offline_inference/text_to_image/text_to_image.py \
   --model Qwen/Qwen-Image-2.1 \
   --prompt "A ceramic teapot on a wooden table" \
-  --negative-prompt "blurry, low quality, text, watermark" \
   --output qwen_image_21_fp8.png \
-  --num-inference-steps 50 --cfg-scale 4.0 \
+  --num-inference-steps 50 --cfg-scale 1.0 \
   --quantization fp8 --ignored-layers "img_mlp"
 ```
 
@@ -259,7 +259,7 @@ BF16 vision tower, so it is unaffected by text-encoder FP8. See
 [`docs/user_guide/quantization/fp8.md`](../../docs/user_guide/quantization/fp8.md)
 for the scope rules.
 
-#### FP8 prefix KV storage
+### FP8 prefix KV storage
 
 The cached prefix K/V can be stored in FP8 E4M3 (with per-token-per-head fp32
 scales), halving the prefix-cache memory — relevant for long prompts (up to
@@ -298,7 +298,7 @@ memory-bound long-prompt / multi-image workloads, not a free lunch;
 Note: a quantized prefix cache is not CUDA-graph capturable — requests using
 this option stay on the eager decode path (a warning is logged once).
 
-#### Why not the scheduler-managed paged KV (`DiffusionKVCacheMode.PAGED_SCHEDULER`)?
+### Why not the scheduler-managed paged KV (`DiffusionKVCacheMode.PAGED_SCHEDULER`)?
 
 Evaluated and deliberately not adopted (see the `qwen21-p0-kv` commit message
 for the full analysis): the paged scheduler targets *cross-request* KV
