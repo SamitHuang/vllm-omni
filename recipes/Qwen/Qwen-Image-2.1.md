@@ -65,7 +65,7 @@ python examples/offline_inference/image_to_image/image_edit.py \
 or via the bundled launcher:
 
 ```bash
-bash examples/offline_inference/image_to_image/run_qwen_image_21_edit.sh
+bash examples/offline_inference/image_to_image/run_qwen_image_21.sh
 ```
 
 Up to 4 condition images can be passed via `--image`:
@@ -106,37 +106,45 @@ vllm serve Qwen/Qwen-Image-2.1 --omni \
   --max-num-seqs 8
 ```
 
-Step execution batches compatible requests at the same KV-cache phase. Once
-running requests have completed their first denoising step, newly arriving
-requests wait for that batch to finish before starting their own prefill.
-`--max-num-seqs` controls batch capacity; mixed prefill/decode admission is not
-supported yet.
+Step execution batches compatible requests at the same KV-cache phase. The
+pipeline tags every request with a `batch_compatibility_key` (conditioning
+mode plus condition-image layout), so a newly arriving request that would
+otherwise join a batch already past its first denoising step is isolated by
+the scheduler and deferred until the in-flight batch drains — it no longer
+fails the whole batch. `--max-num-seqs` controls batch capacity.
 
 ### CUDA Graph decode
 
 Qwen-Image-2.1 automatically uses CUDA Graph for supported fixed-shape denoising
-decode steps when `enforce_eager=False` (the default). Prefill remains eager.
-This works with both request execution and `--step-execution`.
+decode steps when `enable_cuda_graph_decode=True` (the default) and
+`enforce_eager=False`. Prefill remains eager. This works with both request
+execution and `--step-execution`.
 
-To disable graph capture:
+To disable graph capture while keeping the rest of the compilation setup:
 
 ```bash
-vllm serve Qwen/Qwen-Image-2.1 --omni --enforce-eager --vae-use-tiling
+vllm serve Qwen/Qwen-Image-2.1 --omni --no-enable-cuda-graph-decode
 ```
 
-The same control is available as `Omni(..., enforce_eager=True)` and as
-`enforce_eager: true` on a stage in the deployment YAML. It disables both graph
-capture and automatic `torch.compile`. Otherwise, this transformer uses its
-model-specific decode graphs instead of automatic `torch.compile`.
+The same control is available as `Omni(..., enable_cuda_graph_decode=False)`
+and as `enable_cuda_graph_decode: false` on a stage in the deployment YAML.
+`--enforce-eager` / `enforce_eager: true` remains the broader switch: it
+disables both graph capture and automatic `torch.compile`. Otherwise, this
+transformer uses its model-specific decode graphs instead of automatic
+`torch.compile`.
 
-The autoregressive engine's `compilation_config.cudagraph_mode` does not control
-this diffusion path; use `enforce_eager` to force eager execution.
+The autoregressive engine's `compilation_config.cudagraph_mode` does not
+control this diffusion path; use `enable_cuda_graph_decode` (or
+`enforce_eager` for everything) to force eager decode execution.
 
 TP/SP/ring parallelism, HSDP, offload/cache hooks, compiled blocks, quantized
-KV caches, dynamic LoRA, and padded text masks fall back to eager decode.
-Graphs keep separate entries for different image layouts and copy request-owned
-prefix K/V into static buffers before replay. Those buffers require additional
-memory; graph entries are bounded by the transformer's cache limit.
+KV caches, dynamic LoRA, padded text masks, and a second in-flight request
+whose cache aliases an already-owned graph key fall back to eager decode.
+Graphs keep separate entries for different image layouts and copy
+request-owned prefix K/V into static buffers before replay; each graph key
+has a single live owner at a time, so concurrent same-shape requests never
+overwrite each other's prefix. Those buffers require additional memory; graph
+entries are bounded by the transformer's cache limit.
 
 ### Verification
 
@@ -310,6 +318,63 @@ step), per-request page tables, and re-validating the block-causal
 piecewise-span masking and Ulysses/CFG constraints, for no memory benefit over
 the per-request dense tensors. The FP8 storage above captures the actual
 memory win at ~1% of the integration cost.
+
+## Quality Comparison (head vs diffusers)
+
+The reference is the diffusers Qwen-Image 2.1 pipeline
+([huggingface/diffusers#14804](https://github.com/huggingface/diffusers/pull/14804)).
+Both sides must pin the same checkpoint, inputs, seed, precision (BF16), and
+hardware.
+
+vLLM-Omni (this recipe):
+
+```bash
+python examples/offline_inference/text_to_image/text_to_image.py \
+  --model Qwen/Qwen-Image-2.1 \
+  --prompt "A ceramic teapot on a wooden table" \
+  --seed 42 \
+  --output qwen_image_21_vllm_omni.png \
+  --num-inference-steps 50 \
+  --cfg-scale 1.0
+```
+
+diffusers reference:
+
+```python
+import torch
+from diffusers import QwenImage21Pipeline  # diffusers PR #14804
+
+pipe = QwenImage21Pipeline.from_pretrained(
+    "Qwen/Qwen-Image-2.1", torch_dtype=torch.bfloat16
+).to("cuda")
+image = pipe(
+    prompt="A ceramic teapot on a wooden table",
+    num_inference_steps=50,
+    true_cfg_scale=1.0,
+    generator=torch.Generator(device="cuda").manual_seed(42),
+    height=1024,
+    width=1024,
+).images[0]
+image.save("qwen_image_21_diffusers.png")
+```
+
+| Metric | vLLM-Omni | diffusers (#14804) | Status |
+| --- | --- | --- | --- |
+| Output image (1024×1024, 50 steps, seed 42, BF16) | pending measurement | pending measurement | not yet run |
+| PSNR / LPIPS vs reference | pending measurement | — | not yet run |
+| Latency (time/image, same GPU) | pending measurement | pending measurement | not yet run |
+
+The prefix KV cache changes the compute path (cached prefix vs. full recompute
+at every step), so exact numerical parity is not expected; match the cache
+setting on both sides or compare with PSNR/LPIPS rather than exact pixels.
+
+The following capabilities are implemented but the PR-body checkboxes predate
+any attached measurements; treat them as unverified until the A/B above is
+filled in:
+
+- [ ] TP=2/4 output parity vs single-card — pending measurement.
+- [ ] VAE tiling vs non-tiled decode — pending measurement.
+- [ ] CUDA graph decode vs eager — pending measurement.
 
 ## Known Limitations
 
