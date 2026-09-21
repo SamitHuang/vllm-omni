@@ -1,0 +1,93 @@
+=== id:4043203379 | chatgpt-codex-connector[bot] | vllm_omni/diffusion/models/qwen_image_21/pipeline_qwen_image_21.py:1247 | reply_to:null ===
+**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Keep new requests out of populated KV-cache batches**
+
+With step execution and `max_num_seqs > 1`, the scheduler explicitly admits compatible waiting requests alongside already-running requests, so a request arriving after the first denoise step produces exactly this mixed `prefill`/`decode` phase set and aborts the whole batch here. Since the recipe advertises continuous step execution with `--max-num-seqs 8`, the pipeline must either handle mixed phases or prevent such requests from joining an in-flight batch rather than raising.
+
+Useful? React with 👍 / 👎.
+
+=== id:4043203389 | chatgpt-codex-connector[bot] | vllm_omni/diffusion/models/qwen_image_21/pipeline_qwen_image_21.py:193 | reply_to:null ===
+**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Partition batches by image-conditioning layout**
+
+The preprocessor never sets `request.batch_compatibility_key`, so the generic request and step schedulers consider text-only requests, image-conditioned requests, and requests with different condition-image layouts compatible when their sampling parameters match. Such requests are then placed in one batch and rejected later by `_prepare_generation_context` or `denoise_step`, turning otherwise valid concurrent requests into batch-wide failures; record the conditioning mode, image count, and resized slot sizes in the compatibility key on both the empty-image and image paths.
+
+Useful? React with 👍 / 👎.
+
+=== id:4043203392 | chatgpt-codex-connector[bot] | vllm_omni/diffusion/models/qwen_image_21/pipeline_qwen_image_21.py:693 | reply_to:null ===
+**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Preserve request order when duplicating condition latents**
+
+When a request batch contains more than one prompt and `num_outputs_per_prompt > 1`, prompt embeddings are ordered per request (`A, A, B, B`), but concatenating the encoded batch repeatedly orders condition latents as `A, B, A, B`. The second and third generations therefore receive another request's condition image; duplicate each encoded row consecutively so its order matches the repeated prompt embeddings and output splitting.
+
+Useful? React with 👍 / 👎.
+
+=== id:4043203401 | chatgpt-codex-connector[bot] | vllm_omni/diffusion/models/qwen_image_21/pipeline_qwen_image_21.py:147 | reply_to:null ===
+**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Avoid truth-testing tensor and ndarray image inputs**
+
+For a condition image supplied as a multi-element `torch.Tensor` or `numpy.ndarray`, this truth-value check raises an ambiguity error before `_to_pil` can process it, despite `_to_pil` explicitly supporting both input types. Check explicitly for `None` or an empty list instead so these supported image representations reach conversion.
+
+Useful? React with 👍 / 👎.
+
+=== id:4043275121 | SamitHuang | vllm_omni/diffusion/models/qwen_image_21/pipeline_qwen_image_21.py:283 | reply_to:null ===
+This pipeline is the entire new model surface (~1.3k lines here, plus transformer/VAE/CUDA graph) and the PR adds **zero tests**. Commits `4fc3cf8` / `3affc77` mention Qwen-Image-2.1 unit tests and then `clean tests` removes them from the branch. Add at least (1) unit tests for preprocess, `prepare_latents` duplication, mixed-phase `_assemble_kv_cache`, and VAE `spatial_compression_ratio=16`, and (2) a `tests/e2e/online_serving/test_qwen_image_21.py` smoke wired into `.buildkite/cuda/test-ready.yml` the same way `test_qwen_image.py` is. Without that, the TP / VAE-tiling / CUDA-graph claims in the commit messages are not merge-blocking evidence.
+
+=== id:4043275125 | SamitHuang | vllm_omni/diffusion/models/qwen_image_21/decode_graph.py:274 | reply_to:null ===
+`register_prefill` copies prefix K/V into a **shared** entry keyed only by `(branch, batch, prefix_len, target_tokens, dtype, device, backend)` and then **re-points every caller’s `kv_cache` dict at those tensors**. A second in-flight request with the same key `copy_`s over the first request’s prefix while the first request’s cache still aliases the same storage, so decode attends to another request’s text/image tokens. Sequential reuse of one buffer is fine; concurrent ownership is not. Keep per-request (or per-generation) static buffers, or refuse CUDA-graph decode whenever more than one live cache aliases the same key. This interacts directly with the recipe’s `--max-num-seqs 8` serving path.
+
+=== id:4043275130 | SamitHuang | vllm_omni/diffusion/models/qwen_image_21/pipeline_qwen_image_21.py:693 | reply_to:null ===
+`encode_prompt` expands with `prompt_embeds.repeat(1, num_images_per_prompt, 1).view(batch * n, ...)` which is request-major (`A, A, B, B`). `torch.cat([encoded] * (batch_size // encoded.shape[0]), dim=0)` is tile-major (`A, B, A, B`). For a 2-prompt batch with `num_outputs_per_prompt=2`, generations 2 and 3 therefore get the other request’s condition latents (and `split_diffusion_output_by_request` will pair them as if they were correct). Use `repeat_interleave(repeats=n, dim=0)` (or encode-then-repeat per row) so condition latents match the prompt-embed order. This needs a unit test with `batch_size=2, n=2`.
+
+=== id:4043275138 | SamitHuang | vllm_omni/diffusion/models/qwen_image_21/pipeline_qwen_image_21.py:147 | reply_to:null ===
+`if not raw_image` is an ambiguous truth-value check. `_to_pil` documents `torch.Tensor` and `numpy.ndarray` inputs; a multi-element tensor/array raises `RuntimeError: Boolean value of Tensor with more than one value is ambiguous` before conversion. Treat T2I as `raw_image is None or raw_image == []` (and maybe empty tuple), then always wrap a single image in a list. Same pattern should apply to whatever OpenAI image-edit path feeds tensors into `multi_modal_data["image"]`.
+
+=== id:4043275145 | SamitHuang | recipes/Qwen/Qwen-Image-2.1.md:107 | reply_to:null ===
+This example advertises `--step-execution --max-num-seqs 8`, but `QwenImage21Pipeline._assemble_kv_cache` raises if a new request’s first denoise step joins a batch that is already in decode (`Cannot batch requests at mixed KV-cache phases`). With the default step scheduler admitting waiting requests into a running batch, that is the normal continuous-batching case, not an edge case. Either keep mixed-phase requests out of the same `InputBatch` (and document the restriction here), or do not publish this command until that TODO is implemented. As written, following the recipe under load fails the whole batch.
+
+=== id:4043327545 | SamitHuang | vllm_omni/diffusion/data.py:909 | reply_to:null ===
+the CUDA graph for decode seems only used by QwenImage2.1? It's better to claim how it works together with eager mode or cudagraph_mode.
+
+=== id:4043342420 | SamitHuang | examples/offline_inference/text_to_image/text_to_image.py:1 | reply_to:null ===
+can provide a `examples/offline_inference/image_to_image/run_qwen_image_21.sh` script as well
+
+=== id:4043666922 | hsliuustc0106 | vllm_omni/diffusion/data.py:909 | reply_to:null ===
+This flag has no ingress, so the CUDA-graph decode path is unreachable for users: it's not in `OmniEngineArgs`/`StageDeployConfig`/`_DiffusionConfigProjection` (contrast `vae_use_tiling`, which flows through all three), and `Omni(enable_cuda_graph_decode=True)` is silently dropped by `from_kwargs`' field-name filter (`data.py:1604`). The only writer is the `False` default, so `decode_graph.py` + the transformer machinery only run under tests. Either wire it like `enforce_eager`/`vae_use_tiling` (deploy knob + projection) or document it as test-only in the recipe — the body's checked "[x] CUDA Graph for decode steps" reads as user-available today.
+
+=== id:4043667674 | hsliuustc0106 | vllm_omni/diffusion/models/qwen_image_21/pipeline_qwen_image_21.py:1246 | reply_to:null ===
+Reachable under the recipe's own `--step-execution --max-num-seqs 8`, and it fails the whole wave, not just the joiner: the default scheduler admits waiting requests while running ones are mid-generation (`base_scheduler.py` schedules running first, then admits waiting while capacity remains; `_can_schedule_waiting` compares only `StepBatchSamplingParamsKey` — no KV phase), and a `denoise_step` exception terminally fails every scheduled request via `diffusion_engine.py`'s `Execution failed for diffusion requests ...` handler. So one fresh arrival converts all in-flight requests into errors. Fix direction: phase-aware admission (defer joins while any running request is past step 0) or a per-model `batch_compatibility_key`; until then the features-table ✅ for Step Execution and the recipe's serving block overstate support vs. the unchecked TODO box.
+
+=== id:4043668653 | hsliuustc0106 | examples/offline_inference/image_to_image/qwen_image_21_edit.py:1 | reply_to:null ===
+Blocking per the examples policy: a newly added model-specific Python example (the file names one model family), while this directory's convention is the generic runner (`image_edit.py`, which dispatches via `get_model_class_name`/`build_image_to_image_prompt` — the same helpers this script calls). Smallest fix: register a `QwenImage21Pipeline` spec in `model_extras/_EXTRA_SPECS` (it's missing, so `build_image_to_image_prompt` currently falls through to the generic builder and silently ignores the `height`/`width` args this script passes) and fold this into `image_edit.py`; drop the model-specific file.
+
+=== id:4043668703 | hsliuustc0106 | vllm_omni/diffusion/models/qwen_image_21/__init__.py:1 | reply_to:null ===
+No tests anywhere in the PR. Sibling new models each ship a `tests/diffusion/models/<model>/` suite (sensenova_u1, glm_image, boogu_image incl. registry tests, ovis_image, z_image), and no CI lane touches `qwen_image_21` today. Given the new surface — registry entry, pre/post-process funcs, KV-cache prefill/decode protocol, step-mode merge/scatter, graph fallback gates — at least a CPU-runnable registry + loading + pre/post-process test would protect it.
+
+=== id:4043668767 | hsliuustc0106 | recipes/Qwen/Qwen-Image-2.1.md:3 | reply_to:null ===
+Missing the head-vs-reference comparison the model-addition checklist requires: the body's Test Plan is empty and there's no diffusers-#14804 quality/latency A/B (same checkpoint, inputs, seed, precision, hardware) — the recipe's only number is the tile-size PSNR probe. The checked TODO boxes (TP=2/4 vs single-card output, VAE tiling, CUDA graphs) also have no attached measurements. Please add the reference A/B with exact commands and both sides' outputs, or state why it can't run yet.
+
+=== id:4044943764 | RuixiangMa | tests/diffusion/models/qwen_image_21/test_batch_compatibility.py:1 | reply_to:null ===
+Test coverage is insufficient.
+
+=== id:4045080762 | RuixiangMa | vllm_omni/diffusion/distributed/autoencoders/autoencoder_kl_qwenimage21.py:2 | reply_to:null ===
+```suggestion
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
+```
+
+=== id:4045084688 | RuixiangMa | vllm_omni/diffusion/models/qwen_image_21/__init__.py:2 | reply_to:null ===
+```suggestion
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
+```
+
+=== id:4059060032 | FayeSpica | vllm_omni/diffusion/models/qwen_image_21/qwen_image_21_transformer.py:388 | reply_to:null ===
+```suggestion
+        height_index = torch.where(height_index < 0, height_index + self.freqs[1].shape[0], height_index)
+        width_index = torch.where(width_index < 0, width_index + self.freqs[2].shape[0], width_index)
+        return torch.cat(
+            [
+                self.freqs[0].index_select(0, frame_index),
+                self.freqs[1].index_select(0, height_index),
+                self.freqs[2].index_select(0, width_index),
+            ],
+            dim=-1,
+        )
+```
+
+Could we use `torch.index_select` here for NPU compatibility, similar to #6320? This was the only issue preventing the model from starting on NPU in my tests.
+
