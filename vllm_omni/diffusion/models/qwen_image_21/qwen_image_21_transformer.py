@@ -385,7 +385,16 @@ class QwenImage21Rope(nn.Module):
         height_index[image_pad_mask] = torch.tensor(image_height_index, dtype=torch.long, device=device)
         width_index[image_pad_mask] = torch.tensor(image_width_index, dtype=torch.long, device=device)
 
-        return torch.cat([self.freqs[0][frame_index], self.freqs[1][height_index], self.freqs[2][width_index]], dim=-1)
+        height_index = torch.where(height_index < 0, height_index + self.freqs[1].shape[0], height_index)
+        width_index = torch.where(width_index < 0, width_index + self.freqs[2].shape[0], width_index)
+        return torch.cat(
+            [
+                self.freqs[0].index_select(0, frame_index),
+                self.freqs[1].index_select(0, height_index),
+                self.freqs[2].index_select(0, width_index),
+            ],
+            dim=-1,
+        )
 
 
 def _enable_pattern_ignored_layers(quant_config: QuantizationConfig | None) -> QuantizationConfig | None:
@@ -898,12 +907,14 @@ class QwenImage21Transformer2DModel(CachedTransformer):
         # Module boundary where _sp_plan shards the target tokens + their RoPE freqs.
         self.sequence_prepare = QwenImage21SequencePrepare(self.img_in, self.pos_embed)
 
-        # Use decode graphs unless the caller requests eager execution.
-        # Model-level (sequential) offload registers its swap hook on this
-        # top-level module rather than on individual blocks; graphs stay
-        # eligible only when that hook keeps weights on persistent staging
-        # storage (see QwenImage21DecodeGraphManager._offload_reason).
-        self.enable_cuda_graph_decode = not od_config.enforce_eager
+        # Use decode graphs unless the caller disables them or requests eager
+        # execution. Model-level (sequential) offload registers its swap hook
+        # on this top-level module rather than on individual blocks; graphs
+        # stay eligible only when that hook keeps weights on persistent
+        # staging storage (see QwenImage21DecodeGraphManager._offload_reason).
+        self.enable_cuda_graph_decode = (
+            getattr(od_config, "enable_cuda_graph_decode", True) and not od_config.enforce_eager
+        )
         self._decode_graph_manager = (
             QwenImage21DecodeGraphManager(
                 self,

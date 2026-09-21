@@ -196,6 +196,8 @@ def get_qwen_image_21_pre_process_func(
         if "additional_information" not in prompt:
             prompt["additional_information"] = {}
 
+        if isinstance(raw_image, tuple):
+            raw_image = list(raw_image)
         if raw_image is None or (isinstance(raw_image, list) and len(raw_image) == 0):
             request.batch_compatibility_key = ("qwen_image_21", ())
             request.prompt = prompt
