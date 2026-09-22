@@ -327,6 +327,54 @@ def test_persistent_dit_staging_reuses_fixed_device_storage(accelerator_device) 
     remove_sequential_offload([dit, encoder])
 
 
+def test_default_sequential_offload_releases_device_storage(accelerator_device) -> None:
+    """Without persistent staging, offloading keeps plain move semantics."""
+    dit = _create_simple_module().to(accelerator_device)
+    encoder = _create_simple_module().to(accelerator_device)
+
+    apply_sequential_offload(
+        dit_modules=[dit],
+        encoder_modules=[encoder],
+        device=accelerator_device,
+        pin_memory=False,
+    )
+
+    dit_hook = dit._hook_registry.get_hook(SequentialOffloadHook._HOOK_NAME)
+    assert dit_hook._stager is None  # no retained staging: GPU storage is freed on offload
+
+    dit_hook._to_gpu(dit)
+    assert dit.linear.weight.device == accelerator_device
+    dit_hook._to_cpu(dit)
+    assert dit.linear.weight.device.type == "cpu"
+
+    remove_sequential_offload([dit, encoder])
+
+
+@pytest.mark.parametrize(
+    ("decode_graphs", "expect_stager"),
+    [(True, True), (False, False)],
+)
+def test_model_level_persistent_staging_gated_on_decode_graph(
+    accelerator_device, decode_graphs: bool, expect_stager: bool
+) -> None:
+    """ModelLevelOffloadBackend only retains DiT staging for decode-graph models."""
+    pipeline = nn.Module()
+    pipeline.transformer = _create_simple_module()
+    if decode_graphs:
+        pipeline.transformer.enable_cuda_graph_decode = True
+    pipeline.text_encoder = _create_simple_module()
+    backend = ModelLevelOffloadBackend(
+        OffloadConfig(strategy=OffloadStrategy.MODEL_LEVEL, pin_cpu_memory=False),
+        accelerator_device,
+    )
+    backend.enable(pipeline)
+
+    hook = pipeline.transformer._hook_registry.get_hook(SequentialOffloadHook._HOOK_NAME)
+    assert (hook._stager is not None) is expect_stager
+
+    backend.disable()
+
+
 def test_sequential_offload_can_begin_with_dit_on_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
     dit = _create_simple_module()
     encoder = _create_simple_module()
