@@ -240,8 +240,21 @@ class DiffusionModelRunner(OmniConnectorModelRunnerMixin):
             return
 
         if getattr(model, "enable_cuda_graph_decode", False):
-            logger.info("Model runner: %s uses CUDA graph decode instead of torch.compile.", attr_name)
-            return
+            # Decode-graph models still compile their blocks: graph capture
+            # records the compiled (fused) kernels. Inductor's own cudagraphs
+            # must stay off so the two graph layers never stack.
+            try:
+                import torch._inductor.config as inductor_config
+
+                inductor_config.triton.cudagraphs = False
+            except Exception as e:
+                logger.warning(
+                    "Model runner: could not disable inductor cudagraphs for the "
+                    "compile+CUDA-graph combo (%s); capture may fail and fall back "
+                    "to compiled eager decode.",
+                    e,
+                )
+            logger.info("Model runner: %s combines CUDA graph decode with torch.compile.", attr_name)
 
         compile_granularity = self.od_config.diffusion_compile_granularity
         compile_dynamic = self.od_config.diffusion_compile_dynamic

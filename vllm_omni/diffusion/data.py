@@ -959,9 +959,10 @@ class OmniDiffusionConfig:
     # Currently only Qwen-Image-2.1's transformer implements this; other models
     # ignore the flag. This is a per-model diffusion path, independent of the
     # AR engine's ``compilation_config.cudagraph_mode`` (which does not apply
-    # to diffusion stages) and of ``diffusion_compile_granularity`` — models
-    # with decode graphs skip automatic torch.compile of their DiT blocks, so
-    # the two never stack. ``enforce_eager=True`` forces eager decode and
+    # to diffusion stages). It stacks with ``diffusion_compile_granularity``:
+    # the DiT blocks are still torch.compile'd and graph capture records the
+    # compiled (fused) kernels, while inductor's own cudagraphs stay off.
+    # ``enforce_eager=True`` forces eager decode and
     # disables capture regardless of this flag; unsupported configurations
     # (SP/TP, ring, HSDP, dynamic LoRA, padded masks, quantized prefix KV, or
     # a second in-flight request aliasing the same graph key) log and fall

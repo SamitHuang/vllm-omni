@@ -24,12 +24,16 @@ Memory note: graph entries own an additional copy of the prefix K/V. Decode
 attention concatenates that prefix with target K/V inside the captured region;
 transient tensors use the graph memory pool.
 
+The model runner regionally torch.compile's the transformer blocks even when
+decode graphs are enabled, so capture records the compiled (fused) kernels;
+inductor's own cudagraphs stay off so the two graph layers never stack.
+
 Fallbacks (all logged, all eager): CUDA unavailable, model-level CPU offload
 without persistent weight staging, sequence/ring/tensor parallelism,
-HSDP/offload hooks, torch.compile'd blocks, KV-cache quantization, dynamic
-LoRA wrappers, padded text masks (the masked attention path branches on
-mask contents, which cannot be captured), unknown graph key at decode, a
-second live request aliasing an owned graph key, and capture failure.
+HSDP/offload hooks, KV-cache quantization, dynamic LoRA wrappers, padded text
+masks (the masked attention path branches on mask contents, which cannot be
+captured), unknown graph key at decode, a second live request aliasing an
+owned graph key, and capture failure.
 """
 
 from __future__ import annotations
@@ -223,9 +227,6 @@ class QwenImage21DecodeGraphManager:
                     reason = "tensor parallelism runs collectives inside the captured region"
             if reason is None:
                 for block in model.transformer_blocks:
-                    if getattr(block.forward, "_torchdynamo_orig_callable", None) is not None:
-                        reason = "transformer blocks are torch.compile'd"
-                        break
                     if hasattr(block, "_hook_registry") or hasattr(block, "_omni_original_forward"):
                         reason = "transformer blocks carry offload/cache hooks"
                         break

@@ -129,17 +129,23 @@ vllm serve Qwen/Qwen-Image-2.1 --omni --no-enable-cuda-graph-decode
 The same control is available as `Omni(..., enable_cuda_graph_decode=False)`
 and as `enable_cuda_graph_decode: false` on a stage in the deployment YAML.
 `--enforce-eager` / `enforce_eager: true` remains the broader switch: it
-disables both graph capture and automatic `torch.compile`. Otherwise, this
-transformer uses its model-specific decode graphs instead of automatic
-`torch.compile`.
+disables both graph capture and automatic `torch.compile`. The two
+optimizations stack: the DiT blocks are regionally `torch.compile`'d and
+graph capture records the compiled (fused) kernels, while inductor's own
+cudagraphs stay disabled so the two graph layers never nest. Measured on a
+single GB200 (1024×1024, 50 steps, seed 42, BF16, `true_cfg_scale=1.0`,
+warmup 1 + median of 3): compile+graph 3.04 s, compile-only 3.2 s,
+graph-only 4.0 s, eager 4.3 s end-to-end per image; combo output vs eager is
+44.5–45.6 dB PSNR (the same magnitude as pure `torch.compile` fusion
+divergence), and graph-only vs eager is bit-identical.
 
 The autoregressive engine's `compilation_config.cudagraph_mode` does not
 control this diffusion path; use `enable_cuda_graph_decode` (or
 `enforce_eager` for everything) to force eager decode execution.
 
-TP/SP/ring parallelism, HSDP, offload/cache hooks, compiled blocks, quantized
-KV caches, dynamic LoRA, padded text masks, and a second in-flight request
-whose cache aliases an already-owned graph key fall back to eager decode.
+TP/SP/ring parallelism, HSDP, offload/cache hooks, quantized KV caches,
+dynamic LoRA, padded text masks, and a second in-flight request whose cache
+aliases an already-owned graph key fall back to eager decode.
 Graphs keep separate entries for different image layouts and copy
 request-owned prefix K/V into static buffers before replay; each graph key
 has a single live owner at a time, so concurrent same-shape requests never
@@ -374,7 +380,10 @@ filled in:
 
 - [ ] TP=2/4 output parity vs single-card — pending measurement.
 - [ ] VAE tiling vs non-tiled decode — pending measurement.
-- [ ] CUDA graph decode vs eager — pending measurement.
+- [x] CUDA graph decode vs eager — measured on GB200 (1024×1024, 50 steps,
+  seed 42, BF16): compile+graph 3.04 s/image vs eager 4.3 s/image (~1.4×),
+  44.5–45.6 dB PSNR vs eager; graph-only is bit-identical to eager. See
+  "CUDA Graph decode" above.
 
 ## Known Limitations
 
