@@ -1,204 +1,0 @@
-node: gb200-rack1-01
-=== T2I ===
-/home/mozf/vllm-omni/vllm_omni/version.py:55: RuntimeWarning: vLLM and vLLM-Omni appear to have mismatched major/minor versions:
- --> vLLM-Omni version 0.26.1.dev1+g76de642c5
- --> vLLM version 0.29.0
-This will likely cause compatibility issues.
-  warn_if_misaligned_vllm_version()
-INFO 09-21 08:49:45 [patch.py:252] NVFP4 W4A4 weight_scale NaN-clamp: installed.
-INFO 09-21 08:49:46 [quack_fp8.py:76] Quack FP8 fused-bias GEMM enabled (CuteDSL).
-INFO 09-21 08:49:46 [quack_fp8.py:155] Patched FlashInfer FP8 ScaledMM to use quack fused-bias GEMM.
-INFO 09-21 08:49:46 [patch.py:503] inductor factorable-divisibility patch: installed.
-INFO 09-21 08:49:46 [patch.py:568] [cumem-cuda] CuMemAllocator._python_free_callback patched: asleep guard extended to all platforms.
-INFO 09-21 08:49:47 [fa.py:105] Using CuTe FlashAttention-4 on Blackwell
-INFO 09-21 08:49:49 [weight_utils.py:58] Using model weights format ['*']
-INFO 09-21 08:49:49 [omni_base.py:208] [Omni] Initializing with model Qwen/Qwen-Image-2.1
-INFO 09-21 08:49:49 [omni_engine_base.py:163] [OmniEngine] Initializing with model Qwen/Qwen-Image-2.1
-INFO 09-21 08:49:51 [config_factory.py:697] Resolved generic diffusion final_output_type='image' for model_class_name='QwenImage21Pipeline'.
-INFO 09-21 08:49:51 [omni_engine_base.py:312] [OmniEngine] Launching Orchestrator thread with 1 stages
-INFO 09-21 08:49:51 [stage_init_utils.py:775] [stage_init] Set VLLM_WORKER_MULTIPROC_METHOD=spawn
-INFO 09-21 08:49:51 [weight_utils.py:58] Using model weights format ['*']
-INFO 09-21 08:49:51 [weight_utils.py:58] Using model weights format ['*']
-INFO 09-21 08:49:51 [scheduler.py:277] Chunked prefill is enabled with max_num_batched_tokens=2048.
-INFO 09-21 08:49:51 [kernel.py:369] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'])
-INFO 09-21 08:49:51 [diffusion_worker.py:332] Final IR op priority after setting vLLM-Omni overrides: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'])
-INFO 09-21 08:49:51 [diffusion_worker.py:344] Worker 0: Initialized device and distributed environment.
-INFO 09-21 08:49:51 [parallel_state.py:610] Building SP subgroups from explicit sp_group_ranks (sp_size=1, ulysses=1, ring=1, use_ulysses_low=True).
-INFO 09-21 08:49:51 [parallel_state.py:652] SP group details for rank 0: sp_group=[0], ulysses_group=[0], ring_group=[0]
-(DiffusionWorker pid=2877460) INFO 09-21 08:49:52 [hub_prefetch.py:299] Prefetching Qwen/Qwen-Image-2.1 subfolders: ['scheduler', 'text_encoder', 'vae', 'processor']
-(DiffusionWorker pid=2877460) INFO 09-21 08:49:52 [hub_prefetch.py:224] Acquired flock prefetch lock for Qwen/Qwen-Image-2.1 at /mnt/lustre/hf-models/locks/vllm-omni-prefetch/Qwen__Qwen-Image-2.1.lock
-(DiffusionWorker pid=2877460) Fetching 22 files:   0%|          | 0/22 [00:00<?, ?it/s]Fetching 22 files: 100%|██████████| 22/22 [00:00<00:00, 1979.08it/s]
-(DiffusionWorker pid=2877460) INFO 09-21 08:49:52 [hub_prefetch.py:344] Prefetch complete for Qwen/Qwen-Image-2.1
-(DiffusionWorker pid=2877460) /home/mozf/vllm-omni/.venv/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py:205: UserWarning: The `local_dir_use_symlinks` argument is deprecated and ignored in `hf_hub_download`. Downloading to a local directory does not use symlinks anymore.
-(DiffusionWorker pid=2877460)   warnings.warn(
-(DiffusionWorker pid=2877460) Fetching 4 files:   0%|          | 0/4 [00:00<?, ?it/s]Fetching 4 files: 100%|██████████| 4/4 [00:00<00:00, 1477.00it/s]
-(DiffusionWorker pid=2877460) Loading weights:   0%|          | 0/750 [00:00<?, ?it/s]Loading weights:   3%|▎         | 23/750 [00:00<00:03, 225.47it/s]Loading weights:   6%|▋         | 48/750 [00:00<00:02, 237.05it/s]Loading weights:  10%|▉         | 72/750 [00:00<00:03, 225.49it/s]Loading weights:  13%|█▎        | 101/750 [00:00<00:02, 249.63it/s]Loading weights:  17%|█▋        | 127/750 [00:00<00:02, 232.96it/s]Loading weights:  21%|██        | 158/750 [00:00<00:02, 248.63it/s]Loading weights:  25%|██▍       | 184/750 [00:00<00:02, 243.05it/s]Loading weights:  28%|██▊       | 213/750 [00:00<00:02, 250.02it/s]Loading weights:  32%|███▏      | 239/750 [00:00<00:02, 245.90it/s]Loading weights:  36%|███▌      | 268/750 [00:01<00:01, 255.40it/s]Loading weights:  39%|███▉      | 294/750 [00:01<00:01, 252.61it/s]Loading weights:  43%|████▎     | 323/750 [00:01<00:01, 261.60it/s]Loading weights:  47%|████▋     | 350/750 [00:01<00:01, 260.07it/s]Loading weights:  50%|█████     | 378/750 [00:01<00:01, 261.11it/s]Loading weights:  62%|██████▏   | 467/750 [00:01<00:00, 442.11it/s]Loading weights:  95%|█████████▌| 716/750 [00:01<00:00, 1039.01it/s]Loading weights: 100%|██████████| 750/750 [00:01<00:00, 428.30it/s] 
-(DiffusionWorker pid=2877460) INFO 09-21 08:49:55 [platform.py:338] Defaulting to diffusion attention backend CUDNN_ATTN (Blackwell sm_100, cuDNN 92000, head_dim 128)
-(DiffusionWorker pid=2877460) INFO 09-21 08:49:55 [selector.py:93] Resolved diffusion attention backend 'CUDNN_ATTN' for role='self' via platform default
-(DiffusionWorker pid=2877460) INFO 09-21 08:49:57 [weight_utils.py:58] Using model weights format ['transformer/diffusion_pytorch_model-00001-of-00002.safetensors', 'transformer/diffusion_pytorch_model-00002-of-00002.safetensors']
-(DiffusionWorker pid=2877460) Multi-thread loading shards:   0% Completed | 0/2 [00:00<?, ?it/s]
-(DiffusionWorker pid=2877460) Multi-thread loading shards:  50% Completed | 1/2 [00:00<00:00,  1.88it/s]
-(DiffusionWorker pid=2877460) Multi-thread loading shards: 100% Completed | 2/2 [00:01<00:00,  1.05it/s]
-(DiffusionWorker pid=2877460) Multi-thread loading shards: 100% Completed | 2/2 [00:01<00:00,  1.12it/s]
-(DiffusionWorker pid=2877460) 
-(DiffusionWorker pid=2877460) INFO 09-21 08:49:59 [diffusers_loader.py:1098] Loading weights took 1.86 seconds
-(DiffusionWorker pid=2877460) INFO 09-21 08:49:59 [diffusion_model_runner.py:351] Model loading took 30.2190 GiB and 8.080112 seconds
-(DiffusionWorker pid=2877460) INFO 09-21 08:49:59 [diffusion_model_runner.py:357] Model runner: Model loaded successfully.
-(DiffusionWorker pid=2877460) INFO 09-21 08:49:59 [diffusion_model_runner.py:243] Model runner: transformer uses CUDA graph decode instead of torch.compile.
-(DiffusionWorker pid=2877460) INFO 09-21 08:49:59 [diffusion_model_runner.py:448] Model runner: Initialization complete.
-(DiffusionWorker pid=2877460) INFO 09-21 08:50:00 [diffusion_worker.py:425] Worker 0: Process-scoped GPU memory after model loading: 31.01 GiB.
-(DiffusionWorker pid=2877460) INFO 09-21 08:50:00 [manager.py:112] Initializing DiffusionLoRAManager: device=cuda:0, dtype=torch.bfloat16, max_cached_adapters=1, static_lora_path=None
-(DiffusionWorker pid=2877460) INFO 09-21 08:50:00 [diffusion_worker.py:302] Worker 0: Initialization complete.
-(DiffusionWorker pid=2877460) INFO 09-21 08:50:00 [uniproc_executor.py:74] Diffusion worker initialized in-process (uniproc executor)
-(DiffusionWorker pid=2877460) INFO 09-21 08:50:00 [diffusion_engine.py:402] [RequestBatch] engine init max_num_seqs=1 max_wait_ms=0.0
-(DiffusionWorker pid=2877460) INFO 09-21 08:50:00 [diffusion_engine.py:1289] dummy run to warm up the model
-(DiffusionWorker pid=2877460)   0%|          | 0/2 [00:00<?, ?it/s] 50%|█████     | 1/2 [00:00<00:00,  4.72it/s](DiffusionWorker pid=2877460) INFO 09-21 08:50:01 [decode_graph.py:446] Captured Qwen-Image-2.1 decode graph for key=('cond', 1, 10, ((1, 32, 32),), torch.bfloat16, 0, 'CUDNN_ATTN')
-100%|██████████| 2/2 [00:00<00:00,  4.59it/s]100%|██████████| 2/2 [00:00<00:00,  4.60it/s]
-(DiffusionWorker pid=2877460) INFO 09-21 08:50:01 [inline_stage_diffusion_client.py:82] [InlineStageDiffusionClient] stage-0 [rep-0] initialized inline (max_num_seqs=1)
-(DiffusionWorker pid=2877460) INFO 09-21 08:50:01 [stage_runtime.py:1226] [StageRuntime] Stage 0 replica 0 initialized (diffusion)
-(DiffusionWorker pid=2877460) INFO 09-21 08:50:01 [orchestrator.py:420] [Orchestrator] Starting event loop
-(DiffusionWorker pid=2877460) INFO 09-21 08:50:01 [omni_engine_base.py:344] [OmniEngine] Orchestrator ready with 1 stages
-(DiffusionWorker pid=2877460) INFO 09-21 08:50:01 [omni_base.py:227] [Omni] AsyncOmniEngine initialized in 11.73 seconds
-(DiffusionWorker pid=2877460) INFO 09-21 08:50:01 [omni_base.py:246] [Omni] Initialized with 1 stages for model Qwen/Qwen-Image-2.1
-(DiffusionWorker pid=2877460) 
-(DiffusionWorker pid=2877460) ============================================================
-(DiffusionWorker pid=2877460) Generation Configuration:
-(DiffusionWorker pid=2877460)   Model: Qwen/Qwen-Image-2.1
-(DiffusionWorker pid=2877460)   Inference steps: 20
-(DiffusionWorker pid=2877460)   Cache backend: None (no acceleration)
-(DiffusionWorker pid=2877460)   Quantization: None (BF16)
-(DiffusionWorker pid=2877460)   Parallel configuration: tensor_parallel_size=deploy/default, ulysses_degree=1, ulysses_mode=strict, ring_degree=1, cfg_parallel_size=1, vae_patch_parallel_size=1, enable_expert_parallel=False.
-(DiffusionWorker pid=2877460)   CPU offload: False; CPU Layerwise Offload: False
-(DiffusionWorker pid=2877460)   Image size: 1024x1024
-(DiffusionWorker pid=2877460) ============================================================
-(DiffusionWorker pid=2877460) 
-(DiffusionWorker pid=2877460) Processed prompts:   0%|          | 0/1 [00:00<?, ?it/s]
-(DiffusionWorker pid=2877460)   0%|          | 0/20 [00:00<?, ?it/s][A
-(DiffusionWorker pid=2877460)   5%|▌         | 1/20 [00:00<00:05,  3.22it/s][A(DiffusionWorker pid=2877460) INFO 09-21 08:50:01 [decode_graph.py:446] Captured Qwen-Image-2.1 decode graph for key=('cond', 1, 18, ((1, 64, 64),), torch.bfloat16, 0, 'CUDNN_ATTN')
-(DiffusionWorker pid=2877460) INFO 09-21 08:50:02 [decode_graph.py:446] Captured Qwen-Image-2.1 decode graph for key=('uncond', 1, 13, ((1, 64, 64),), torch.bfloat16, 0, 'CUDNN_ATTN')
-
-(DiffusionWorker pid=2877460)  10%|█         | 2/20 [00:00<00:08,  2.03it/s][A
-(DiffusionWorker pid=2877460)  15%|█▌        | 3/20 [00:01<00:05,  2.96it/s][A
-(DiffusionWorker pid=2877460)  20%|██        | 4/20 [00:01<00:04,  3.77it/s][A
-(DiffusionWorker pid=2877460)  25%|██▌       | 5/20 [00:01<00:03,  4.44it/s][A
-(DiffusionWorker pid=2877460)  30%|███       | 6/20 [00:01<00:02,  5.00it/s][A
-(DiffusionWorker pid=2877460)  35%|███▌      | 7/20 [00:01<00:02,  5.43it/s][A
-(DiffusionWorker pid=2877460)  40%|████      | 8/20 [00:01<00:02,  5.77it/s][A
-(DiffusionWorker pid=2877460)  45%|████▌     | 9/20 [00:01<00:01,  6.01it/s][A
-(DiffusionWorker pid=2877460)  50%|█████     | 10/20 [00:02<00:01,  6.21it/s][A
-(DiffusionWorker pid=2877460)  55%|█████▌    | 11/20 [00:02<00:01,  6.35it/s][A
-(DiffusionWorker pid=2877460)  60%|██████    | 12/20 [00:02<00:01,  6.40it/s][A
-(DiffusionWorker pid=2877460)  65%|██████▌   | 13/20 [00:02<00:01,  6.46it/s][A
-(DiffusionWorker pid=2877460)  70%|███████   | 14/20 [00:02<00:00,  6.53it/s][A
-(DiffusionWorker pid=2877460)  75%|███████▌  | 15/20 [00:02<00:00,  6.57it/s][A
-(DiffusionWorker pid=2877460)  80%|████████  | 16/20 [00:03<00:00,  6.57it/s][A
-(DiffusionWorker pid=2877460)  85%|████████▌ | 17/20 [00:03<00:00,  6.57it/s][A
-(DiffusionWorker pid=2877460)  90%|█████████ | 18/20 [00:03<00:00,  6.60it/s][A
-(DiffusionWorker pid=2877460)  95%|█████████▌| 19/20 [00:03<00:00,  6.61it/s][A
-(DiffusionWorker pid=2877460) 100%|██████████| 20/20 [00:03<00:00,  6.63it/s][A100%|██████████| 20/20 [00:03<00:00,  5.47it/s]
-(DiffusionWorker pid=2877460) Processed prompts: 100%|██████████| 1/1 [00:03<00:00,  3.94s/it]Processed prompts: 100%|██████████| 1/1 [00:03<00:00,  3.94s/it]
-(DiffusionWorker pid=2877460) Total generation time: 3.9453 seconds (3945.34 ms)
-(DiffusionWorker pid=2877460) INFO 09-21 08:50:05 [text_to_image.py:794] Outputs: [OmniRequestOutput(request_id='0_770e0883-477e-4c55-8e47-3328e985b949', finished=True, stage_id=0, final_output_type='image', prompt_token_ids=None, outputs=[], images=[1 PIL Images], prompt={'prompt': 'A red ceramic teapot on a wooden table.', 'modalities': ['image'], 'negative_prompt': 'blurry, low quality', 'additional_information': {}}, latents=None, metrics={'stage_metrics': {'0': {'stage_id': 0, 'final_output_type': 'image', 'finish_reason': None, 'num_tokens_in': 0, 'num_tokens_out': 0, 'stage_gen_time_ms': 3943.441867828369, 'postprocess_time_ms': 0.0, 'audio_frames': 0, 'audio_sample_rate': 0, 'audio_duration_s': 0.0, 'image_pixels': 1048576, 'denoise_step_latency_ms': 197.17209339141846, 'output_unit_type': 'image', 'output_unit_count': 1, 'serving_time_to_first_output_ms': 3943.847417831421, 'image_time_to_first_output_ms': 3943.420171737671, 'time_per_output_unit_ms': 0.0, 'inter_output_latency_ms': 0.0, 'inter_output_latencies_ms': [], 'vllm_ttft_ms': 0.0, 'vllm_tpot_ms': 0.0, 'vllm_itl_ms': 0.0, 'vllm_itls_ms': [], 'stage_name': 'diffusion'}}, 'stage_id': 0, 'final_output_type': 'image', 'num_tokens_in': 0, 'num_tokens_out': 0}, multimodal_output={}, custom_output={}, stage_durations={'queue_wait_ms': 0.4212159983580932, 'stage_0_gen_ms': 3943.441867828369}, peak_memory_mb=40320.0)]
-(DiffusionWorker pid=2877460) Saved generated image to /home/mozf/vllm-omni/artifacts/pr7759-review/e2e_images/t2i_teapot.png
-(DiffusionWorker pid=2877460) INFO 09-21 08:50:05 [omni_engine_base.py:1144] [OmniEngine] Shutting down Orchestrator
-(DiffusionWorker pid=2877460) INFO 09-21 08:50:05 [orchestrator.py:512] [Orchestrator] Received shutdown signal
-(DiffusionWorker pid=2877460) INFO 09-21 08:50:05 [orchestrator.py:2720] [Orchestrator] Shutting down all 1 client(s)
-(DiffusionWorker pid=2877460) INFO 09-21 08:50:06 [stage_pool.py:1362] [StagePool] Stage 0 replica 0 shut down
-=== I2I (edit the T2I output) ===
-/home/mozf/vllm-omni/vllm_omni/version.py:55: RuntimeWarning: vLLM and vLLM-Omni appear to have mismatched major/minor versions:
- --> vLLM-Omni version 0.26.1.dev1+g76de642c5
- --> vLLM version 0.29.0
-This will likely cause compatibility issues.
-  warn_if_misaligned_vllm_version()
-INFO 09-21 08:50:24 [patch.py:252] NVFP4 W4A4 weight_scale NaN-clamp: installed.
-INFO 09-21 08:50:26 [quack_fp8.py:76] Quack FP8 fused-bias GEMM enabled (CuteDSL).
-INFO 09-21 08:50:26 [quack_fp8.py:155] Patched FlashInfer FP8 ScaledMM to use quack fused-bias GEMM.
-INFO 09-21 08:50:26 [patch.py:503] inductor factorable-divisibility patch: installed.
-INFO 09-21 08:50:26 [patch.py:568] [cumem-cuda] CuMemAllocator._python_free_callback patched: asleep guard extended to all platforms.
-INFO 09-21 08:50:29 [fa.py:105] Using CuTe FlashAttention-4 on Blackwell
-INFO 09-21 08:50:31 [weight_utils.py:58] Using model weights format ['*']
-INFO 09-21 08:50:31 [omni_base.py:208] [Omni] Initializing with model Qwen/Qwen-Image-2.1
-INFO 09-21 08:50:31 [omni_engine_base.py:163] [OmniEngine] Initializing with model Qwen/Qwen-Image-2.1
-INFO 09-21 08:50:33 [config_factory.py:697] Resolved generic diffusion final_output_type='image' for model_class_name='QwenImage21Pipeline'.
-INFO 09-21 08:50:33 [omni_engine_base.py:312] [OmniEngine] Launching Orchestrator thread with 1 stages
-INFO 09-21 08:50:33 [stage_init_utils.py:775] [stage_init] Set VLLM_WORKER_MULTIPROC_METHOD=spawn
-INFO 09-21 08:50:33 [weight_utils.py:58] Using model weights format ['*']
-INFO 09-21 08:50:33 [weight_utils.py:58] Using model weights format ['*']
-INFO 09-21 08:50:33 [scheduler.py:277] Chunked prefill is enabled with max_num_batched_tokens=2048.
-INFO 09-21 08:50:33 [kernel.py:369] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'])
-INFO 09-21 08:50:33 [diffusion_worker.py:332] Final IR op priority after setting vLLM-Omni overrides: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'])
-INFO 09-21 08:50:33 [diffusion_worker.py:344] Worker 0: Initialized device and distributed environment.
-INFO 09-21 08:50:33 [parallel_state.py:610] Building SP subgroups from explicit sp_group_ranks (sp_size=1, ulysses=1, ring=1, use_ulysses_low=True).
-INFO 09-21 08:50:33 [parallel_state.py:652] SP group details for rank 0: sp_group=[0], ulysses_group=[0], ring_group=[0]
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:34 [hub_prefetch.py:299] Prefetching Qwen/Qwen-Image-2.1 subfolders: ['scheduler', 'text_encoder', 'vae', 'processor']
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:34 [hub_prefetch.py:224] Acquired flock prefetch lock for Qwen/Qwen-Image-2.1 at /mnt/lustre/hf-models/locks/vllm-omni-prefetch/Qwen__Qwen-Image-2.1.lock
-(DiffusionWorker pid=2879936) Fetching 22 files:   0%|          | 0/22 [00:00<?, ?it/s]Fetching 22 files: 100%|██████████| 22/22 [00:00<00:00, 1980.48it/s]
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:34 [hub_prefetch.py:344] Prefetch complete for Qwen/Qwen-Image-2.1
-(DiffusionWorker pid=2879936) /home/mozf/vllm-omni/.venv/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py:205: UserWarning: The `local_dir_use_symlinks` argument is deprecated and ignored in `hf_hub_download`. Downloading to a local directory does not use symlinks anymore.
-(DiffusionWorker pid=2879936)   warnings.warn(
-(DiffusionWorker pid=2879936) Fetching 4 files:   0%|          | 0/4 [00:00<?, ?it/s]Fetching 4 files: 100%|██████████| 4/4 [00:00<00:00, 1553.88it/s]
-(DiffusionWorker pid=2879936) Loading weights:   0%|          | 0/750 [00:00<?, ?it/s]Loading weights:   3%|▎         | 22/750 [00:00<00:03, 218.48it/s]Loading weights:   6%|▋         | 48/750 [00:00<00:03, 223.49it/s]Loading weights:  10%|▉         | 72/750 [00:00<00:02, 229.47it/s]Loading weights:  13%|█▎        | 99/750 [00:00<00:02, 244.50it/s]Loading weights:  17%|█▋        | 124/750 [00:00<00:02, 243.42it/s]Loading weights:  20%|█▉        | 149/750 [00:00<00:02, 234.90it/s]Loading weights:  24%|██▍       | 180/750 [00:00<00:02, 249.70it/s]Loading weights:  27%|██▋       | 205/750 [00:00<00:02, 240.97it/s]Loading weights:  31%|███▏      | 235/750 [00:00<00:02, 252.01it/s]Loading weights:  35%|███▍      | 261/750 [00:01<00:01, 247.02it/s]Loading weights:  39%|███▊      | 290/750 [00:01<00:01, 253.05it/s]Loading weights:  42%|████▏     | 316/750 [00:01<00:01, 249.97it/s]Loading weights:  46%|████▌     | 345/750 [00:01<00:01, 250.71it/s]Loading weights:  50%|████▉     | 373/750 [00:01<00:01, 257.52it/s]Loading weights:  57%|█████▋    | 424/750 [00:01<00:00, 328.28it/s]Loading weights:  85%|████████▍ | 635/750 [00:01<00:00, 842.34it/s]Loading weights: 100%|██████████| 750/750 [00:01<00:00, 417.44it/s]
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:37 [platform.py:338] Defaulting to diffusion attention backend CUDNN_ATTN (Blackwell sm_100, cuDNN 92000, head_dim 128)
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:37 [selector.py:93] Resolved diffusion attention backend 'CUDNN_ATTN' for role='self' via platform default
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:39 [weight_utils.py:58] Using model weights format ['transformer/diffusion_pytorch_model-00001-of-00002.safetensors', 'transformer/diffusion_pytorch_model-00002-of-00002.safetensors']
-(DiffusionWorker pid=2879936) Multi-thread loading shards:   0% Completed | 0/2 [00:00<?, ?it/s]
-(DiffusionWorker pid=2879936) Multi-thread loading shards:  50% Completed | 1/2 [00:00<00:00,  1.87it/s]
-(DiffusionWorker pid=2879936) Multi-thread loading shards: 100% Completed | 2/2 [00:01<00:00,  1.05it/s]
-(DiffusionWorker pid=2879936) Multi-thread loading shards: 100% Completed | 2/2 [00:01<00:00,  1.12it/s]
-(DiffusionWorker pid=2879936) 
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:41 [diffusers_loader.py:1098] Loading weights took 1.86 seconds
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:42 [diffusion_model_runner.py:351] Model loading took 30.2190 GiB and 8.371849 seconds
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:42 [diffusion_model_runner.py:357] Model runner: Model loaded successfully.
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:42 [diffusion_model_runner.py:243] Model runner: transformer uses CUDA graph decode instead of torch.compile.
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:42 [diffusion_model_runner.py:448] Model runner: Initialization complete.
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:42 [diffusion_worker.py:425] Worker 0: Process-scoped GPU memory after model loading: 31.01 GiB.
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:42 [manager.py:112] Initializing DiffusionLoRAManager: device=cuda:0, dtype=torch.bfloat16, max_cached_adapters=1, static_lora_path=None
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:42 [diffusion_worker.py:302] Worker 0: Initialization complete.
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:42 [uniproc_executor.py:74] Diffusion worker initialized in-process (uniproc executor)
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:42 [diffusion_engine.py:402] [RequestBatch] engine init max_num_seqs=1 max_wait_ms=0.0
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:42 [diffusion_engine.py:1289] dummy run to warm up the model
-(DiffusionWorker pid=2879936)   0%|          | 0/2 [00:00<?, ?it/s] 50%|█████     | 1/2 [00:00<00:00,  4.82it/s](DiffusionWorker pid=2879936) INFO 09-21 08:50:43 [decode_graph.py:446] Captured Qwen-Image-2.1 decode graph for key=('cond', 1, 10, ((1, 32, 32),), torch.bfloat16, 0, 'CUDNN_ATTN')
-100%|██████████| 2/2 [00:00<00:00,  4.93it/s]100%|██████████| 2/2 [00:00<00:00,  4.91it/s]
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:43 [inline_stage_diffusion_client.py:82] [InlineStageDiffusionClient] stage-0 [rep-0] initialized inline (max_num_seqs=1)
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:43 [stage_runtime.py:1226] [StageRuntime] Stage 0 replica 0 initialized (diffusion)
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:43 [orchestrator.py:420] [Orchestrator] Starting event loop
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:43 [omni_engine_base.py:344] [OmniEngine] Orchestrator ready with 1 stages
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:43 [omni_base.py:227] [Omni] AsyncOmniEngine initialized in 12.25 seconds
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:43 [omni_base.py:246] [Omni] Initialized with 1 stages for model Qwen/Qwen-Image-2.1
-(DiffusionWorker pid=2879936) Pipeline loaded
-(DiffusionWorker pid=2879936) 
-(DiffusionWorker pid=2879936) ============================================================
-(DiffusionWorker pid=2879936) Generation Configuration:
-(DiffusionWorker pid=2879936)   Model: Qwen/Qwen-Image-2.1
-(DiffusionWorker pid=2879936)   Inference steps: 20
-(DiffusionWorker pid=2879936)   Cache backend: None (no acceleration)
-(DiffusionWorker pid=2879936)   Input image size: (1024, 1024)
-(DiffusionWorker pid=2879936)   Parallel configuration: ulysses_degree=1, ring_degree=1, cfg_parallel_size=1, tensor_parallel_size=1, enable_expert_parallel: False
-(DiffusionWorker pid=2879936) ============================================================
-(DiffusionWorker pid=2879936) 
-(DiffusionWorker pid=2879936) Processed prompts:   0%|          | 0/1 [00:00<?, ?it/s]
-(DiffusionWorker pid=2879936)   0%|          | 0/20 [00:00<?, ?it/s][A
-(DiffusionWorker pid=2879936)   5%|▌         | 1/20 [00:00<00:12,  1.52it/s][A(DiffusionWorker pid=2879936) INFO 09-21 08:50:44 [decode_graph.py:446] Captured Qwen-Image-2.1 decode graph for key=('cond', 1, 4116, ((1, 64, 64), (1, 64, 64)), torch.bfloat16, 0, 'CUDNN_ATTN')
-
-(DiffusionWorker pid=2879936)  10%|█         | 2/20 [00:00<00:08,  2.24it/s][A
-(DiffusionWorker pid=2879936)  20%|██        | 4/20 [00:01<00:03,  4.57it/s][A
-(DiffusionWorker pid=2879936)  30%|███       | 6/20 [00:01<00:02,  6.40it/s][A
-(DiffusionWorker pid=2879936)  40%|████      | 8/20 [00:01<00:01,  7.85it/s][A
-(DiffusionWorker pid=2879936)  50%|█████     | 10/20 [00:01<00:01,  8.95it/s][A
-(DiffusionWorker pid=2879936)  60%|██████    | 12/20 [00:01<00:00,  9.76it/s][A
-(DiffusionWorker pid=2879936)  70%|███████   | 14/20 [00:01<00:00, 10.40it/s][A
-(DiffusionWorker pid=2879936)  80%|████████  | 16/20 [00:02<00:00, 10.87it/s][A
-(DiffusionWorker pid=2879936)  90%|█████████ | 18/20 [00:02<00:00, 11.19it/s][A
-(DiffusionWorker pid=2879936) 100%|██████████| 20/20 [00:02<00:00, 11.42it/s][A100%|██████████| 20/20 [00:02<00:00,  8.09it/s]
-(DiffusionWorker pid=2879936) Processed prompts: 100%|██████████| 1/1 [00:02<00:00,  3.00s/it]Processed prompts: 100%|██████████| 1/1 [00:02<00:00,  3.00s/it]
-(DiffusionWorker pid=2879936) Total generation time: 2.9985 seconds (2998.46 ms)
-(DiffusionWorker pid=2879936) Saved edited image to /home/mozf/vllm-omni/artifacts/pr7759-review/e2e_images/i2i_teapot_blue.png
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:46 [omni_engine_base.py:1144] [OmniEngine] Shutting down Orchestrator
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:46 [orchestrator.py:512] [Orchestrator] Received shutdown signal
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:46 [orchestrator.py:2720] [Orchestrator] Shutting down all 1 client(s)
-(DiffusionWorker pid=2879936) INFO 09-21 08:50:47 [stage_pool.py:1362] [StagePool] Stage 0 replica 0 shut down
-total 1589
-drwxrwxr-x 2 mozf mozf    4096 Sep 21 08:50 .
-drwxrwxr-x 3 mozf mozf    4096 Sep 21 08:49 ..
--rw-rw-r-- 1 mozf mozf 2279235 Sep 21 08:50 i2i_teapot_blue.png
--rw-rw-r-- 1 mozf mozf 1615157 Sep 21 08:50 t2i_teapot.png
