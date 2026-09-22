@@ -669,7 +669,7 @@ class QwenImage21ResidualUpBlock(nn.Module):
         out_dim (int): Output dimension
         num_res_blocks (int): Number of residual blocks
         dropout (float): Dropout rate
-        temperal_upsample (bool): Whether to upsample on temporal dimension
+        temporal_upsample (bool): Whether to upsample on temporal dimension
         up_flag (bool): Whether to upsample or not
         non_linearity (str): Type of non-linearity to use
     """
@@ -680,7 +680,7 @@ class QwenImage21ResidualUpBlock(nn.Module):
         out_dim: int,
         num_res_blocks: int,
         dropout: float = 0.0,
-        temperal_upsample: bool = False,
+        temporal_upsample: bool = False,
         up_flag: bool = False,
         non_linearity: str = "silu",
     ):
@@ -692,7 +692,7 @@ class QwenImage21ResidualUpBlock(nn.Module):
             self.avg_shortcut = QwenImage21DupUp3D(
                 in_dim,
                 out_dim,
-                factor_t=2 if temperal_upsample else 1,
+                factor_t=2 if temporal_upsample else 1,
                 factor_s=2,
             )
         else:
@@ -709,7 +709,7 @@ class QwenImage21ResidualUpBlock(nn.Module):
 
         # Add upsampling layer if needed
         if up_flag:
-            upsample_mode = "upsample3d" if temperal_upsample else "upsample2d"
+            upsample_mode = "upsample3d" if temporal_upsample else "upsample2d"
             self.upsampler = QwenImage21Resample(out_dim, mode=upsample_mode, upsample_out_dim=out_dim)
         else:
             self.upsampler = None
@@ -827,7 +827,7 @@ class QwenImage21Decoder3d(nn.Module):
         dim_mult (list of int): Multipliers for the number of channels in each block.
         num_res_blocks (int): Number of residual blocks in each block.
         attn_scales (list of float): Scales at which to apply attention mechanisms.
-        temperal_upsample (list of bool): Whether to upsample temporally in each block.
+        temporal_upsample (list of bool): Whether to upsample temporally in each block.
         dropout (float): Dropout rate for the dropout layers.
         non_linearity (str): Type of non-linearity to use.
     """
@@ -839,7 +839,7 @@ class QwenImage21Decoder3d(nn.Module):
         dim_mult=[1, 2, 4, 4],
         num_res_blocks=2,
         attn_scales=[],
-        temperal_upsample=[False, True, True],
+        temporal_upsample=[False, True, True],
         dropout=0.0,
         non_linearity: str = "silu",
         out_channels: int = 3,
@@ -851,7 +851,7 @@ class QwenImage21Decoder3d(nn.Module):
         self.dim_mult = dim_mult
         self.num_res_blocks = num_res_blocks
         self.attn_scales = attn_scales
-        self.temperal_upsample = temperal_upsample
+        self.temporal_upsample = temporal_upsample
 
         self.nonlinearity = get_activation(non_linearity)
 
@@ -875,7 +875,7 @@ class QwenImage21Decoder3d(nn.Module):
             up_flag = i != len(dim_mult) - 1
             # determine upsampling mode, if not upsampling, set to None
             upsample_mode = None
-            if up_flag and temperal_upsample[i]:
+            if up_flag and temporal_upsample[i]:
                 upsample_mode = "upsample3d"
             elif up_flag:
                 upsample_mode = "upsample2d"
@@ -886,7 +886,7 @@ class QwenImage21Decoder3d(nn.Module):
                     out_dim=out_dim,
                     num_res_blocks=num_res_blocks,
                     dropout=dropout,
-                    temperal_upsample=temperal_upsample[i] if up_flag else False,
+                    temporal_upsample=temporal_upsample[i] if up_flag else False,
                     up_flag=up_flag,
                     non_linearity=non_linearity,
                 )
@@ -1157,7 +1157,7 @@ class AutoencoderKLQwenImage21(ModelMixin, AutoencoderMixin, ConfigMixin, FromOr
 
         self.z_dim = z_dim
         self.temperal_downsample = temperal_downsample
-        self.temperal_upsample = temperal_downsample[::-1]
+        self.temporal_upsample = temperal_downsample[::-1]
 
         if decoder_base_dim is None:
             decoder_base_dim = base_dim
@@ -1182,7 +1182,7 @@ class AutoencoderKLQwenImage21(ModelMixin, AutoencoderMixin, ConfigMixin, FromOr
             dim_mult=dim_mult,
             num_res_blocks=num_res_blocks,
             attn_scales=attn_scales,
-            temperal_upsample=self.temperal_upsample,
+            temporal_upsample=self.temporal_upsample,
             dropout=dropout,
             out_channels=out_channels,
             is_residual=is_residual,
