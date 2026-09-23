@@ -420,8 +420,7 @@ class ModelLevelOffloadBackend(OffloadBackend):
                 # plain move semantics so offloading actually frees DiT VRAM
                 # while the encoders run.
                 persistent_dit_staging=(
-                    self.device.type == "cuda"
-                    and any(getattr(dit, "enable_cuda_graph_decode", False) for dit in dits)
+                    self.device.type == "cuda" and any(getattr(dit, "enable_cuda_graph_decode", False) for dit in dits)
                 ),
             )
         except BaseException:

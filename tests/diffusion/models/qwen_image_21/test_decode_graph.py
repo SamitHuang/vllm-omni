@@ -205,9 +205,7 @@ def test_replay_uses_active_request_and_layout(graph_case):
         register(manager, second)
         assert decode(manager, second) is None
         output = decode(manager, first)
-        expected = (
-            torch.ones_like(output).sin() + first[0]["cond"]["key"].mean() + first[0]["cond"]["value"].mean() + 2
-        )
+        expected = torch.ones_like(output).sin() + first[0]["cond"]["key"].mean() + first[0]["cond"]["value"].mean() + 2
         torch.testing.assert_close(output, expected)
         # Once the owner's cache is released, the key is free to adopt.
         del first
